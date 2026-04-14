@@ -1,0 +1,68 @@
+{
+  "name": "tapir",
+  "version": "0.1.7-beta.46",
+  "description": "Tapir — Tabular Application Profile Editor",
+  "license": "MIT",
+  "author": "Nishad Thalhath",
+  "keywords": [
+    "dctap",
+    "simpledsp",
+    "application-profile",
+    "metadata",
+    "shacl",
+    "shex",
+    "yama",
+    "sveltekit",
+    "static-site"
+  ],
+  "homepage": "https://yamaml.github.io/tapir",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yamaml/tapir.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yamaml/tapir/issues"
+  },
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev --port 8081 --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --port 8081 --host 0.0.0.0",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build:vocabs": "tsx scripts/build-vocabs.ts"
+  },
+  "dependencies": {
+    "@zazuko/prefixes": "^2.6.1",
+    "bits-ui": "^2.16.3",
+    "clsx": "^2.1.1",
+    "elkjs": "^0.11.1",
+    "fflate": "^0.8.2",
+    "idb": "^8.0.3",
+    "lucide-svelte": "^0.577.0",
+    "n3": "^2.0.3",
+    "svelte": "^5.53.12",
+    "tailwind-merge": "^3.5.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
+    "yaml": "^2.8.2"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-static": "^3.0.10",
+    "@sveltejs/kit": "^2.55.0",
+    "@sveltejs/vite-plugin-svelte": "^5.1.1",
+    "@tailwindcss/vite": "^4.2.1",
+    "@testing-library/svelte": "^5.3.1",
+    "@types/n3": "^1.26.1",
+    "@zazuko/rdf-vocabularies": "^2023.1.19",
+    "fake-indexeddb": "^6.2.5",
+    "jsdom": "^28.1.0",
+    "svelte-check": "^4.4.5",
+    "tailwindcss": "^4.2.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.1",
+    "vitest": "^4.1.0"
+  }
+}

@@ -1,0 +1,31 @@
+[@NS]
+schema	http://schema.org/
+@base	http://purl.org/yama/examples/2022/tbbt/0.1/
+
+[MAIN]
+#Name	Property	Min	Max	ValueType	Constraint	Comment
+ID	foaf:Person	1	1	ID	http://purl.org/yama/examples/2022/tbbt/0.1/	Details of the character
+Name	foaf:name	1	1	literal	xsd:string	Name of the character
+Family Name	foaf:familyName	1	1	literal	xsd:string	Family Name of the character
+First Name	foaf:firstName	1	1	literal	xsd:string	Firts Name of the character
+Additional Name	schema:additionalName	0	1	literal	xsd:string	First Name of the character
+Job Title	schema:jobTitle	0	1	literal	xsd:string	Job title of the character
+Parents	schema:parent	0	-	reference		Parents of the character
+Children	schema:children	0	-	reference		Children of the character
+Knows	foaf:knows	0	-	reference		This character knows these other characters
+Wikidata	rdfs:seeAlso	0	-	reference		
+Portrayed by	schema:byArtist	0	-	reference		This character is portrayed by
+
+[address]
+#Name	Property	Min	Max	ValueType	Constraint	Comment
+Street	schema:streetAddress	0	-			Building and street address
+Locality	schema:addressLocality	0	-			
+State	schema:addressRegion	0	-			
+Country	schema:addressRegion	0	-			
+Postal Code	schema:postalCode	0	-			
+
+[artist]
+#Name	Property	Min	Max	ValueType	Constraint	Comment
+ID	foaf:Person	1	1	ID	http://purl.org/yama/examples/2022/tbbt/0.1/	Details of the character
+Name	schema:name	0	-			Name of Artist
+Age	rdfs:isDefinedBy	0	-	reference		

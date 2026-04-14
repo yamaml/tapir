@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# SvelteKit / Vite build output
+.svelte-kit/
+build/
+dist/
+
+# Generated vocabulary chunks (built by `npm run build:vocabs` and in CI).
+# Keeping them out of git avoids committing ~2 MB of generated JSON and
+# makes the @zazuko/rdf-vocabularies source of truth clear.
+static/vocabs/
+
+# Test + tooling artefacts
+playwright-report/
+test-results/
+.playwright-mcp/
+coverage/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.*
+*.local
+
+# OS / editor metadata
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs / temp
+*.log
+*.tmp
+npm-debug.log*
+
+# AI assistant config (per-machine, never committed)
+CLAUDE.md

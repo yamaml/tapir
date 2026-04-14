@@ -1,0 +1,82 @@
+# Builds Tapir and deploys the static site to GitHub Pages.
+#
+# Trigger:
+#   - Every push to `main`
+#   - Manual dispatch from the Actions tab
+#
+# One-time repo setup (required):
+#   Settings -> Pages -> Build and deployment -> Source: "GitHub Actions"
+#
+# The site ends up at https://<user>.github.io/tapir/ because
+# svelte.config.js pins `paths.base = '/tapir'`. If you fork under a
+# different repo name, update the base path there too.
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# GitHub Pages needs write access to pages + id-token for the
+# official deploy action. `contents: read` lets us check out the repo.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deploy, and let in-progress runs finish
+# rather than getting cancelled mid-upload (prevents half-deployed sites).
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run check
+
+      - name: Test
+        run: npm test -- --run
+
+      - name: Build vocabulary chunks
+        # Generated from @zazuko/rdf-vocabularies into static/vocabs/.
+        # Must run before `vite build` so the chunks get copied into
+        # the final output.
+        run: npm run build:vocabs
+
+      - name: Build static site
+        run: npm run build
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./build
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
