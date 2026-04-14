@@ -47,17 +47,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build vocabulary chunks
+        # Generated from @zazuko/rdf-vocabularies into static/vocabs/.
+        # Must run before tests and build — one test
+        # (`tests/vocab/build-vocabs.test.ts`) asserts that the chunks
+        # exist, and `vite build` copies them into the final output.
+        run: npm run build:vocabs
+
       - name: Type-check
         run: npm run check
 
       - name: Test
         run: npm test -- --run
-
-      - name: Build vocabulary chunks
-        # Generated from @zazuko/rdf-vocabularies into static/vocabs/.
-        # Must run before `vite build` so the chunks get copied into
-        # the final output.
-        run: npm run build:vocabs
 
       - name: Build static site
         run: npm run build
