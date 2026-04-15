@@ -231,9 +231,14 @@ export async function buildExportSvg(
 			const tColor = s.isSelfRef ? pal.selfRefText : s.isRef ? pal.refText : pal.typeText;
 			const prefix = s.isSelfRef ? '&#x21BA; ' : s.isRef ? '&#x2192; ' : '';
 			const metaY = settings.showLabel && settings.showProperty ? ry + 11 : ry + 17;
-			lines.push(`<text x="${x + w - CARD_COL_W - 6}" y="${metaY}" text-anchor="end" font-size="9" font-family="Inter, sans-serif" fill="${tColor}">${prefix}${esc(s.tl)}</text>`);
+			// Right-edge text: cardinality sits flush at NODE_PAD_H so
+			// its right padding matches the row label's left padding
+			// (both 14 px). The type column right-aligns one cardinality
+			// width further in, keeping the same 4-px gap between the
+			// type text and the cardinality column as before.
+			lines.push(`<text x="${x + w - CARD_COL_W - NODE_PAD_H + 4}" y="${metaY}" text-anchor="end" font-size="9" font-family="Inter, sans-serif" fill="${tColor}">${prefix}${esc(s.tl)}</text>`);
 			if (settings.showCardinality) {
-				lines.push(`<text x="${x + w - 10}" y="${metaY}" text-anchor="end" font-size="9" font-family="JetBrains Mono, monospace" fill="${pal.cardText}">${esc(s.card)}</text>`);
+				lines.push(`<text x="${x + w - NODE_PAD_H}" y="${metaY}" text-anchor="end" font-size="9" font-family="JetBrains Mono, monospace" fill="${pal.cardText}">${esc(s.card)}</text>`);
 			}
 		}
 

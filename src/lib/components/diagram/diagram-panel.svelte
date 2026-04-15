@@ -1381,7 +1381,7 @@
 									{@const metaY = showBoth ? rowY + 11 : rowY + 17}
 									{#if stmt.isSelfRef}
 										<text
-											x={node.x + node.width - CARD_COL_WIDTH - 6}
+											x={node.x + node.width - CARD_COL_WIDTH - NODE_PAD_H + 4}
 											y={metaY}
 											text-anchor="end"
 											font-size="9"
@@ -1393,7 +1393,7 @@
 										</text>
 									{:else if stmt.isRef}
 										<text
-											x={node.x + node.width - CARD_COL_WIDTH - 6}
+											x={node.x + node.width - CARD_COL_WIDTH - NODE_PAD_H + 4}
 											y={metaY}
 											text-anchor="end"
 											font-size="9"
@@ -1405,7 +1405,7 @@
 										</text>
 									{:else}
 										<text
-											x={node.x + node.width - CARD_COL_WIDTH - 6}
+											x={node.x + node.width - CARD_COL_WIDTH - NODE_PAD_H + 4}
 											y={metaY}
 											text-anchor="end"
 											font-size="9"
@@ -1420,7 +1420,7 @@
 										 prose; tabular numerals stay lined up. -->
 									{#if showCardinality}
 										<text
-											x={node.x + node.width - 10}
+											x={node.x + node.width - NODE_PAD_H}
 											y={metaY}
 											text-anchor="end"
 											font-size="9"
