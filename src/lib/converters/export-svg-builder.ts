@@ -31,6 +31,7 @@ import {
 	BW_PALETTE,
 } from './diagram-generator';
 import { safeTextWidth } from '$lib/utils/text-measure';
+import { roundedPath, pointAlongPath } from '$lib/utils/edge-path';
 import ELK from 'elkjs/lib/elk.bundled.js';
 
 const elk = new ELK();
@@ -53,41 +54,6 @@ function esc(s: string): string {
 		.replace(/</g, '&lt;')
 		.replace(/>/g, '&gt;')
 		.replace(/"/g, '&quot;');
-}
-
-/**
- * Finds the midpoint of a routed edge by walking cumulative segment
- * lengths, so labels sit on the actual routed path rather than an
- * arbitrary bend-point. Ported from `diagram-panel.svelte`'s
- * `edgeLabelPos` so preview and export agree on placement.
- */
-function edgeLabelMidpoint(points: Array<{ x: number; y: number }>): { x: number; y: number } {
-	if (points.length < 2) {
-		return { x: points[0].x, y: points[0].y - 8 };
-	}
-	const segLengths: number[] = [];
-	let total = 0;
-	for (let i = 1; i < points.length; i++) {
-		const dx = points[i].x - points[i - 1].x;
-		const dy = points[i].y - points[i - 1].y;
-		const len = Math.sqrt(dx * dx + dy * dy);
-		segLengths.push(len);
-		total += len;
-	}
-	const target = total / 2;
-	let walked = 0;
-	for (let i = 0; i < segLengths.length; i++) {
-		const segLen = segLengths[i];
-		if (walked + segLen >= target) {
-			const t = segLen === 0 ? 0 : (target - walked) / segLen;
-			const a = points[i];
-			const b = points[i + 1];
-			return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t - 8 };
-		}
-		walked += segLen;
-	}
-	const last = points[points.length - 1];
-	return { x: last.x, y: last.y - 8 };
 }
 
 // ── Public API ──────────────────────────────────────────────────
@@ -196,7 +162,12 @@ export async function buildExportSvg(
 			'elk.spacing.edgeNode': '30',
 			'elk.spacing.edgeEdge': '25',
 			'elk.layered.spacing.edgeNodeBetweenLayers': '40',
-			'elk.edgeRouting': 'SPLINES',
+			// Orthogonal routing gives straight horizontal/vertical
+			// runs; the render pass below then rounds each corner
+			// via `roundedPath`. SPLINES's organic curves were
+			// replaced in beta.65 for a cleaner, more-diagramming-
+			// tool-like aesthetic.
+			'elk.edgeRouting': 'ORTHOGONAL',
 			'elk.layered.mergeEdges': 'false',
 		},
 		children,
@@ -208,7 +179,14 @@ export async function buildExportSvg(
 	const lines: string[] = [];
 
 	lines.push(`<defs>`);
-	lines.push(`<marker id="ah" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="${pal.edgeColor}"/></marker>`);
+	// Arrowheads scale with the edge stroke. The cross-edge marker
+	// (`ah`) is sized for the thin 0.6–0.75 px edge; the self-ref
+	// marker (`ah-sr`) keeps its original weight because self-loops
+	// are a signal and stay at 1.5 px. `refX` sits inside the triangle
+	// (not at the tip) so the arrowhead meets the node border cleanly —
+	// a tip-anchored arrowhead leaves a ~1 px gap when the edge stroke
+	// is thinner than the node border.
+	lines.push(`<marker id="ah" markerWidth="6" markerHeight="4.5" refX="5" refY="2.25" orient="auto"><polygon points="0 0, 6 2.25, 0 4.5" fill="${pal.edgeColor}"/></marker>`);
 	lines.push(`<marker id="ah-sr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="${pal.selfRefText}"/></marker>`);
 	lines.push(`</defs>`);
 
@@ -286,17 +264,17 @@ export async function buildExportSvg(
 			if (!sections || !meta) continue;
 			for (const sec of sections) {
 				const pts = [sec.startPoint, ...(sec.bendPoints || []), sec.endPoint];
-				let d = `M ${pts[0].x} ${pts[0].y}`;
-				for (let i = 1; i < pts.length; i++) {
-					const prev = pts[i - 1], curr = pts[i];
-					const dx = (curr.x - prev.x) / 2;
-					d += ` C ${prev.x + dx} ${prev.y}, ${curr.x - dx} ${curr.y}, ${curr.x} ${curr.y}`;
-				}
-				lines.push(`<path d="${d}" fill="none" stroke="${pal.edgeColor}" stroke-width="1.5" marker-end="url(#ah)"/>`);
+				// Orthogonal polyline with rounded corners. The helper
+				// collapses any collinear runs Elk emits before
+				// inserting 8-px arcs at the real bends, clamped to
+				// 40 % of each adjacent segment so short runs degrade
+				// gracefully to a sharp join.
+				const d = roundedPath(pts, 8);
+				lines.push(`<path d="${d}" fill="none" stroke="${pal.edgeColor}" stroke-width="${pal.edgeWidth}" marker-end="url(#ah)"/>`);
 				if (settings.showEdgeLabels) {
 					const labelText = `${meta.label || meta.prop} [${meta.card}]`;
 					const lblW = safeTextWidth(labelText, 8, 'normal', 'mono') + 12;
-					const { x: lx, y: ly } = edgeLabelMidpoint(pts);
+					const { x: lx, y: ly } = pointAlongPath(pts);
 					const labelLeft = lx - lblW / 2;
 					const textX = labelLeft + 6;
 					lines.push(`<rect x="${labelLeft}" y="${ly - 10}" width="${lblW}" height="16" fill="${pal.edgeLabelBg}" opacity="0.9" rx="3" stroke="#e0e0e0" stroke-width="0.5"/>`);

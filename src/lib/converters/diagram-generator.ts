@@ -33,6 +33,12 @@ interface Palette {
 	selfRefText: string;
 	cardText: string;
 	edgeColor: string;
+	/**
+	 * Edge stroke width in SVG units. Kept per-palette so the BW
+	 * variant can go thinner (hierarchy can't be carried by hue in
+	 * monochrome — thinner stroke does the work instead).
+	 */
+	edgeWidth: number;
 	edgeLabelBg: string;
 	edgeLabelText: string;
 	graphBg: string;
@@ -59,7 +65,13 @@ export const COLOR_PALETTE: Palette = {
 	refText: '#1565C0',
 	selfRefText: '#6A1B9A',
 	cardText: '#888888',
-	edgeColor: '#555555',
+	// Edges sit below the box border in the visual hierarchy — lighter
+	// grey than `border` (#666) so connections recede and the node
+	// cards read first. Beta.66 introduced the lighter hue; beta.67
+	// dropped the stroke from 1 → 0.75 px with a matching arrowhead
+	// resize so the edge/arrow proportions stay balanced.
+	edgeColor: '#9ca3af',
+	edgeWidth: 0.75,
 	edgeLabelBg: '#ffffff',
 	edgeLabelText: '#333333',
 	graphBg: '#ffffff',
@@ -78,6 +90,11 @@ export const BW_PALETTE: Palette = {
 	selfRefText: '#000000',
 	cardText: '#666666',
 	edgeColor: '#000000',
+	// Monochrome: can't lighten the hue, so thin the stroke instead
+	// to keep edges subordinate to the node border. 0.6 px is close
+	// to the floor of what svg2pdf.js reliably renders; verified on
+	// the live PDF export path.
+	edgeWidth: 0.6,
 	edgeLabelBg: '#ffffff',
 	edgeLabelText: '#000000',
 	graphBg: '#ffffff',

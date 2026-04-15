@@ -22,6 +22,7 @@
 	} from '$lib/stores/diagram-settings-store';
 	import { downloadText } from '$lib/utils/file-io';
 	import { safeTextWidth } from '$lib/utils/text-measure';
+	import { roundedPath, pointAlongPath } from '$lib/utils/edge-path';
 	import ELK from 'elkjs/lib/elk.bundled.js';
 	import { Popover, PopoverContent, PopoverTrigger } from '$lib/components/ui/popover';
 	import { Separator } from '$lib/components/ui/separator';
@@ -454,7 +455,10 @@
 				'elk.spacing.edgeNode': '30',
 				'elk.spacing.edgeEdge': '25',
 				'elk.layered.spacing.edgeNodeBetweenLayers': '40',
-				'elk.edgeRouting': 'SPLINES',
+				// Orthogonal routing + rounded corners (beta.65).
+				// `buildEdgePath` below collapses Elk's collinear
+				// runs and rounds each real bend with a small arc.
+				'elk.edgeRouting': 'ORTHOGONAL',
 				'elk.layered.mergeEdges': 'false',
 			},
 			children,
@@ -569,79 +573,32 @@
 
 	// ── Edge path helpers ───────────────────────────────────────────
 
-	function buildEdgePath(
-		section: LayoutEdge['sections'][0]
-	): string {
-		const { startPoint, endPoint, bendPoints } = section;
-		if (!bendPoints || bendPoints.length === 0) {
-			const dx = (endPoint.x - startPoint.x) / 2;
-			return `M ${startPoint.x} ${startPoint.y} C ${startPoint.x + dx} ${startPoint.y}, ${endPoint.x - dx} ${endPoint.y}, ${endPoint.x} ${endPoint.y}`;
-		}
-		let d = `M ${startPoint.x} ${startPoint.y}`;
-		const points = [startPoint, ...bendPoints, endPoint];
-		for (let i = 1; i < points.length; i++) {
-			const prev = points[i - 1];
-			const curr = points[i];
-			const dx = (curr.x - prev.x) / 2;
-			d += ` C ${prev.x + dx} ${prev.y}, ${curr.x - dx} ${curr.y}, ${curr.x} ${curr.y}`;
-		}
-		return d;
-	}
-
 	/**
-	 * Computes a position on the edge's path close to its visual centre,
-	 * so the edge label sits on the line rather than floating away.
-	 *
-	 * The path is a sequence of points `[startPoint, ...bendPoints, endPoint]`
-	 * connected by curves (or straight lines). We compute cumulative
-	 * segment lengths and walk to the halfway point, interpolating along
-	 * whichever segment contains it. That gives a natural-looking label
-	 * placement for both short direct edges and long bendy ones.
+	 * Builds the SVG path string for an Elk-routed edge. Elk is
+	 * configured with orthogonal routing; `roundedPath` collapses any
+	 * collinear runs and rounds the remaining bends with small arcs
+	 * so the preview matches the aesthetic of the PDF export.
 	 */
-	function edgeLabelPos(
-		section: LayoutEdge['sections'][0]
-	): { x: number; y: number } {
+	function buildEdgePath(section: LayoutEdge['sections'][0]): string {
 		const points = [
 			section.startPoint,
 			...(section.bendPoints ?? []),
 			section.endPoint,
 		];
-		if (points.length < 2) {
-			return { x: section.startPoint.x, y: section.startPoint.y - 8 };
-		}
+		return roundedPath(points, 8);
+	}
 
-		// Cumulative segment lengths
-		const segLengths: number[] = [];
-		let total = 0;
-		for (let i = 1; i < points.length; i++) {
-			const dx = points[i].x - points[i - 1].x;
-			const dy = points[i].y - points[i - 1].y;
-			const len = Math.sqrt(dx * dx + dy * dy);
-			segLengths.push(len);
-			total += len;
-		}
-
-		// Walk to the midpoint and interpolate
-		const target = total / 2;
-		let walked = 0;
-		for (let i = 0; i < segLengths.length; i++) {
-			const segLen = segLengths[i];
-			if (walked + segLen >= target) {
-				const t = segLen === 0 ? 0 : (target - walked) / segLen;
-				const a = points[i];
-				const b = points[i + 1];
-				return {
-					x: a.x + (b.x - a.x) * t,
-					// Offset upward so the label sits just above the path
-					y: a.y + (b.y - a.y) * t - 8,
-				};
-			}
-			walked += segLen;
-		}
-
-		// Fallback — shouldn't hit, but keep the compiler happy.
-		const last = points[points.length - 1];
-		return { x: last.x, y: last.y - 8 };
+	/**
+	 * Position for the edge label — midpoint of the routed polyline,
+	 * lifted 8 pt above the line so the label rect floats just above.
+	 */
+	function edgeLabelPos(section: LayoutEdge['sections'][0]): { x: number; y: number } {
+		const points = [
+			section.startPoint,
+			...(section.bendPoints ?? []),
+			section.endPoint,
+		];
+		return pointAlongPath(points);
 	}
 
 	// ── Self-ref loop path ──────────────────────────────────────────
@@ -1097,21 +1054,31 @@
 			>
 				<!-- Arrowhead markers -->
 				<defs>
+					<!-- Cross-edge arrowhead — sized for the thin 0.6–0.75 px
+						 stroke. Hover and self-ref markers keep the original
+						 chunkier 8×6 so they read as signals. refX is pulled
+						 inside the triangle so the arrowhead meets the node
+						 border without the tiny gap a tip-anchored marker
+						 leaves on a thin stroke. -->
 					<marker
 						id="arrowhead"
-						markerWidth="8"
-						markerHeight="6"
-						refX="8"
-						refY="3"
+						markerWidth="6"
+						markerHeight="4.5"
+						refX="5"
+						refY="2.25"
 						orient="auto"
 					>
-						<polygon points="0 0, 8 3, 0 6" fill={pal.edgeColor} />
+						<polygon points="0 0, 6 2.25, 0 4.5" fill={pal.edgeColor} />
 					</marker>
+					<!-- Hover arrowhead — same refX inset trick as the
+						 cross-edge marker to close the gap against the node
+						 border. Kept at the full 8×6 so the hover state
+						 still reads as a prominent highlight. -->
 					<marker
 						id="arrowhead-hover"
 						markerWidth="8"
 						markerHeight="6"
-						refX="8"
+						refX="7"
 						refY="3"
 						orient="auto"
 					>
@@ -1198,7 +1165,7 @@
 							d={buildEdgePath(section)}
 							fill="none"
 							stroke={isHovered ? '#1565C0' : pal.edgeColor}
-							stroke-width={isHovered ? 2.5 : 1.5}
+							stroke-width={isHovered ? 2 : pal.edgeWidth}
 							marker-end={isHovered
 								? 'url(#arrowhead-hover)'
 								: 'url(#arrowhead)'}
