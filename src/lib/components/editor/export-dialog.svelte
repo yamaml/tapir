@@ -43,6 +43,8 @@
 	import Image from 'lucide-svelte/icons/image';
 	import ClipboardList from 'lucide-svelte/icons/clipboard-list';
 	import PackageIcon from 'lucide-svelte/icons/package';
+	import Check from 'lucide-svelte/icons/check';
+	import { fade } from 'svelte/transition';
 
 	interface Props {
 		project: TapirProject;
@@ -54,6 +56,37 @@
 
 	let exporting = $state(false);
 	let exportError = $state<string | null>(null);
+
+	// ── Post-export feedback ────────────────────────────────────────
+	//
+	// After a successful individual-format export the modal now stays
+	// open so the user can keep exporting from the same session
+	// (they may want SVG + PDF + DOT of the same diagram, or several
+	// tabular flavours in a row). We signal "the download fired" in
+	// two ways that clear on the same timer so they stay in sync:
+	//
+	// - Banner: a thin green stripe just below the header showing the
+	//   emitted filename, visible for 3 s.
+	// - Card highlight: the card that was just clicked swaps its
+	//   chevron for a check icon and tints its background green.
+	//
+	// The Profile Package (.zip) is treated as a terminal action and
+	// still closes the modal — it's the "I'm done, give me everything"
+	// exit path.
+	let lastExportedId = $state<string | null>(null);
+	let lastExportedFilename = $state<string | null>(null);
+	let feedbackTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function flashSuccess(optionId: string, filename: string): void {
+		if (feedbackTimer !== null) clearTimeout(feedbackTimer);
+		lastExportedId = optionId;
+		lastExportedFilename = filename;
+		feedbackTimer = setTimeout(() => {
+			lastExportedId = null;
+			lastExportedFilename = null;
+			feedbackTimer = null;
+		}, 3000);
+	}
 
 	// ── SVG/PNG Export Helpers ──────────────────────────────────────
 
@@ -241,63 +274,80 @@
 
 			const name = baseFilename();
 
+			// Tracks the actual filename each branch emitted, so the
+			// success banner can show it verbatim. `null` after the
+			// switch means the branch didn't emit anything (error
+			// case) — handled below.
+			let emitted: string | null = null;
+
 			switch (optionId) {
 				case 'simpledsp-tsv': {
 					const content = buildSimpleDsp(project, { lang: $simpleDspLang });
-					downloadText(content, `${name}.tsv`, 'text/tab-separated-values');
+					emitted = `${name}.tsv`;
+					downloadText(content, emitted, 'text/tab-separated-values');
 					break;
 				}
 				case 'simpledsp-csv': {
 					const tsvContent = buildSimpleDsp(project, { lang: $simpleDspLang });
 					const content = tsvToCsv(tsvContent);
-					downloadText(content, `${name}-simpledsp.csv`, 'text/csv');
+					emitted = `${name}-simpledsp.csv`;
+					downloadText(content, emitted, 'text/csv');
 					break;
 				}
 				case 'dctap-csv': {
 					const content = dctapRowsToCsv(',');
-					downloadText(content, `${name}-dctap.csv`, 'text/csv');
+					emitted = `${name}-dctap.csv`;
+					downloadText(content, emitted, 'text/csv');
 					break;
 				}
 				case 'dctap-tsv': {
 					const content = dctapRowsToCsv('\t');
-					downloadText(content, `${name}-dctap.tsv`, 'text/tab-separated-values');
+					emitted = `${name}-dctap.tsv`;
+					downloadText(content, emitted, 'text/tab-separated-values');
 					break;
 				}
 				case 'shacl-turtle': {
 					const content = await buildShacl(project, 'turtle');
-					downloadText(content, `${name}.shacl.ttl`, 'text/turtle');
+					emitted = `${name}.shacl.ttl`;
+					downloadText(content, emitted, 'text/turtle');
 					break;
 				}
 				case 'shex': {
 					const content = buildShExC(project);
-					downloadText(content, `${name}.shex`, 'text/shex');
+					emitted = `${name}.shex`;
+					downloadText(content, emitted, 'text/shex');
 					break;
 				}
 				case 'owldsp-turtle': {
 					const content = await buildOwlDsp(project, 'turtle');
-					downloadText(content, `${name}.owldsp.ttl`, 'text/turtle');
+					emitted = `${name}.owldsp.ttl`;
+					downloadText(content, emitted, 'text/turtle');
 					break;
 				}
 				case 'yaml': {
 					const content = buildYamaYaml(project);
-					downloadText(content, `${name}.yaml`, 'text/yaml');
+					emitted = `${name}.yaml`;
+					downloadText(content, emitted, 'text/yaml');
 					break;
 				}
 				case 'json': {
 					const content = buildYamaJson(project);
-					downloadText(content, `${name}.json`, 'application/json');
+					emitted = `${name}.json`;
+					downloadText(content, emitted, 'application/json');
 					break;
 				}
 				case 'datapackage': {
 					const content = buildDataPackage(project);
-					downloadText(content, `${name}-datapackage.json`, 'application/json');
+					emitted = `${name}-datapackage.json`;
+					downloadText(content, emitted, 'application/json');
 					break;
 				}
 				case 'diagram-svg': {
 					const settings = getDiagramSettings();
 					const svg = await buildExportSvg(project, settings);
 					const suffix = settings.palette === 'bw' ? '-diagram-bw' : '-diagram';
-					downloadText(svg, `${name}${suffix}.svg`, 'image/svg+xml');
+					emitted = `${name}${suffix}.svg`;
+					downloadText(svg, emitted, 'image/svg+xml');
 					break;
 				}
 				case 'diagram-pdf': {
@@ -309,19 +359,22 @@
 					const { svgToPdfBlob } = await import('$lib/utils/svg-to-pdf');
 					const pdfBlob = await svgToPdfBlob(svg);
 					const suffix = settings.palette === 'bw' ? '-diagram-bw' : '-diagram';
-					downloadBlob(pdfBlob, `${name}${suffix}.pdf`);
+					emitted = `${name}${suffix}.pdf`;
+					downloadBlob(pdfBlob, emitted);
 					break;
 				}
 				case 'diagram-png': {
 					const settings = getDiagramSettings();
 					const svgForPng = await buildExportSvg(project, settings);
 					const suffix = settings.palette === 'bw' ? '-diagram-bw' : '-diagram';
-					await svgToPng(svgForPng, `${name}${suffix}.png`);
+					emitted = `${name}${suffix}.png`;
+					await svgToPng(svgForPng, emitted);
 					break;
 				}
 				case 'diagram-dot': {
 					const dot = buildDiagram(project, $diagramSettings.palette);
-					downloadText(dot, `${name}.dot`, 'text/vnd.graphviz');
+					emitted = `${name}.dot`;
+					downloadText(dot, emitted, 'text/vnd.graphviz');
 					break;
 				}
 				case 'report-html': {
@@ -330,7 +383,8 @@
 					// you export" model as the individual diagram formats.
 					const reportSvg = await buildExportSvg(project, getDiagramSettings());
 					const html = generateHtmlReport(project, reportSvg);
-					downloadText(html, `${name}-report.html`, 'text/html');
+					emitted = `${name}-report.html`;
+					downloadText(html, emitted, 'text/html');
 					break;
 				}
 				case 'package-zip': {
@@ -343,16 +397,27 @@
 					const pkgSvg = await buildExportSvg(project, DEFAULT_DIAGRAM_SETTINGS);
 					const zipData = await generatePackageZip(project, pkgSvg);
 					const zipBlob = new Blob([new Uint8Array(zipData) as BlobPart], { type: 'application/zip' });
-					downloadBlob(zipBlob, `${name}-package.zip`);
+					emitted = `${name}-package.zip`;
+					downloadBlob(zipBlob, emitted);
 					break;
 				}
 				default:
 					exportError = `Unknown export format: ${optionId}`;
 			}
 
-			if (!exportError) {
-				open = false;
-				onclose();
+			if (!exportError && emitted) {
+				// The Profile Package is the "give me everything" exit
+				// action — still close the modal on that one. Every
+				// individual-format export keeps the modal open so
+				// the user can chain multiple downloads from a single
+				// session (a common real-world flow — e.g. SVG + PDF
+				// + DOT of the same diagram).
+				if (optionId === 'package-zip') {
+					open = false;
+					onclose();
+				} else {
+					flashSuccess(optionId, emitted);
+				}
 			}
 		} catch (err) {
 			exportError = err instanceof Error ? err.message : String(err);
@@ -364,25 +429,47 @@
 </script>
 
 {#snippet exportCard(opt: ExportOption)}
+	{@const justExported = lastExportedId === opt.id}
 	<button
 		onclick={() => handleExport(opt.id)}
 		disabled={exporting}
-		class="group flex items-start gap-3 rounded-md border border-border bg-background px-3 py-2.5 text-left transition-all hover:border-primary/50 hover:bg-accent/40 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-50 [&_svg]:pointer-events-none"
+		class="group flex items-start gap-3 rounded-md border px-3 py-2.5 text-left transition-all hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-50 [&_svg]:pointer-events-none {justExported
+			? 'border-emerald-400/70 bg-emerald-50 hover:border-emerald-500 dark:border-emerald-500/50 dark:bg-emerald-900/30'
+			: 'border-border bg-background hover:border-primary/50 hover:bg-accent/40'}"
 	>
 		<div class="min-w-0 flex-1">
 			<div class="flex items-center gap-1.5">
-				<span class="font-medium text-foreground">{opt.label}</span>
+				<span class="font-medium {justExported ? 'text-emerald-900 dark:text-emerald-100' : 'text-foreground'}">{opt.label}</span>
 				<span class="rounded bg-muted px-1 py-px font-mono text-[10px] text-muted-foreground">{opt.ext}</span>
 			</div>
 			{#if opt.description}
-				<p class="mt-0.5 text-[11px] text-muted-foreground leading-snug">{opt.description}</p>
+				<p class="mt-0.5 text-[11px] leading-snug {justExported ? 'text-emerald-800/80 dark:text-emerald-200/70' : 'text-muted-foreground'}">{opt.description}</p>
 			{/if}
 		</div>
-		<ChevronRight class="mt-1 h-3.5 w-3.5 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-primary" />
+		{#if justExported}
+			<Check class="mt-1 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+		{:else}
+			<ChevronRight class="mt-1 h-3.5 w-3.5 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-primary" />
+		{/if}
 	</button>
 {/snippet}
 
-<Dialog bind:open onOpenChange={(v) => { if (!v) onclose(); }}>
+<Dialog
+	bind:open
+	onOpenChange={(v) => {
+		if (!v) {
+			// Clear any pending feedback timer so it can't fire on an
+			// unmounted modal and wipe state on a newly reopened one.
+			if (feedbackTimer !== null) {
+				clearTimeout(feedbackTimer);
+				feedbackTimer = null;
+			}
+			lastExportedId = null;
+			lastExportedFilename = null;
+			onclose();
+		}
+	}}
+>
 	<DialogContent class="max-w-2xl max-h-[90vh] flex flex-col gap-0 p-0">
 		<DialogHeader class="border-b border-border px-5 py-4">
 			<DialogTitle class="flex items-center gap-2">
@@ -394,6 +481,22 @@
 		{#if exportError}
 			<div class="mx-5 mt-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
 				{exportError}
+			</div>
+		{:else if lastExportedFilename}
+			<!--
+				Success banner. Appears on a 3-second timer set by
+				`flashSuccess`; the matching per-card highlight below
+				clears from the same timer so both signals stay in
+				sync. Hidden whenever an error is present so the user
+				never sees contradictory feedback at once.
+			-->
+			<div
+				class="mx-5 mt-3 flex items-center gap-2 rounded-md border border-emerald-300/50 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-700/40 dark:bg-emerald-950/40 dark:text-emerald-300 [&_svg]:pointer-events-none"
+				transition:fade={{ duration: 150 }}
+			>
+				<Check class="h-4 w-4 shrink-0" />
+				<span>Downloaded</span>
+				<code class="rounded bg-emerald-100 px-1.5 py-0.5 font-mono text-xs text-emerald-900 dark:bg-emerald-900/60 dark:text-emerald-100">{lastExportedFilename}</code>
 			</div>
 		{/if}
 
