@@ -8,6 +8,7 @@
 	import Sun from 'lucide-svelte/icons/sun';
 	import Moon from 'lucide-svelte/icons/moon';
 	import { Separator } from '$lib/components/ui/separator';
+	import PwaUpdateToast from '$lib/components/pwa-update-toast.svelte';
 
 	let { children } = $props();
 
@@ -111,4 +112,8 @@
 			</a>
 		</div>
 	</footer>
+
+	<!-- SW update notification — only renders when the PWA runtime
+		 has detected a newer bundle. Dev mode silently skips. -->
+	<PwaUpdateToast />
 </div>

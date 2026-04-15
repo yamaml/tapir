@@ -13,7 +13,12 @@ const config = {
 			strict: true
 		}),
 		paths: {
-			base: '/tapir'
+			base: '/tapir',
+			// Use absolute asset URLs (default since SvelteKit 2) so
+			// the SPA fallback HTML works when served from a different
+			// URL than its original path — critical for PWA offline
+			// deep-link support.
+			relative: false
 		},
 		alias: {
 			$lib: 'src/lib'

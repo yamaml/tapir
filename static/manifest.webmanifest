@@ -1,0 +1,29 @@
+{
+	"name": "Tapir — Tabular Application Profile Editor",
+	"short_name": "Tapir",
+	"description": "Browser-based visual editor for SimpleDSP and DCTAP application profiles. 100% client-side — no server, no data leaves the browser.",
+	"start_url": "/tapir/",
+	"scope": "/tapir/",
+	"display": "standalone",
+	"display_override": ["window-controls-overlay", "standalone"],
+	"orientation": "any",
+	"background_color": "#1f2937",
+	"theme_color": "#1f2937",
+	"lang": "en",
+	"dir": "ltr",
+	"categories": ["productivity", "utilities", "developer"],
+	"icons": [
+		{
+			"src": "/tapir/icons/tapir-192.png",
+			"sizes": "192x192",
+			"type": "image/png",
+			"purpose": "any"
+		},
+		{
+			"src": "/tapir/icons/tapir-512.png",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "any"
+		}
+	]
+}
