@@ -1,5 +1,5 @@
 {
-	"name": "Tapir — Tabular Application Profile Editor",
+	"name": "Tapir",
 	"short_name": "Tapir",
 	"description": "Browser-based visual editor for SimpleDSP and DCTAP application profiles. 100% client-side — no server, no data leaves the browser.",
 	"start_url": "/tapir/",

@@ -14,7 +14,40 @@
 
 	onMount(() => {
 		theme.init();
+		requestPersistentStorage();
 	});
+
+	/**
+	 * Ask the browser to mark the origin's storage (IndexedDB,
+	 * caches, localStorage) as "important — don't evict".
+	 *
+	 * Browsers ration storage when disk space gets tight and will
+	 * evict data from origins that haven't been granted persistence.
+	 * For an offline-first tool that holds user-authored profile data
+	 * entirely in IndexedDB, eviction would mean silent data loss —
+	 * the user returns to an "empty dashboard" state with no record
+	 * of what happened. Persistent storage is the defensive line.
+	 *
+	 * The request is granted automatically in installed PWAs and in
+	 * origins with high "site engagement" scores; in ordinary tabs
+	 * it may prompt the user once. Either way the call is safe to
+	 * fire on every load — it's idempotent.
+	 *
+	 * Silently skipped on browsers without the Storage API
+	 * (Safari < 17, older Firefox, some embedded webviews).
+	 */
+	async function requestPersistentStorage(): Promise<void> {
+		if (typeof navigator === 'undefined' || !navigator.storage?.persist) return;
+		try {
+			const already = await navigator.storage.persisted();
+			if (!already) {
+				await navigator.storage.persist();
+			}
+		} catch {
+			// Storage API failures are non-fatal: the app still works,
+			// the user's data just loses its eviction-resistance.
+		}
+	}
 </script>
 
 <div class="flex min-h-screen flex-col bg-background text-foreground transition-colors">
