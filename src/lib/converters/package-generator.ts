@@ -312,6 +312,21 @@ export async function generatePackageZip(
 	// Only include diagram if provided
 	if (svgDiagram) {
 		files['diagram.svg'] = strToU8(svgDiagram);
+		// Also bundle a vector PDF of the diagram — same content as
+		// the SVG, but in a form LaTeX users can `\includegraphics`
+		// directly and archivists can rely on years from now. The
+		// PDF path lazy-loads `jspdf` + `svg2pdf.js`, so it's only
+		// brought in when a user actually builds a package.
+		try {
+			const { svgToPdfBlob } = await import('$lib/utils/svg-to-pdf');
+			const pdfBlob = await svgToPdfBlob(svgDiagram);
+			const pdfBytes = new Uint8Array(await pdfBlob.arrayBuffer());
+			files['diagram.pdf'] = pdfBytes;
+		} catch {
+			// If PDF generation fails (e.g. in a headless test that
+			// lacks a full DOM), fall back silently — the SVG is
+			// already in the package, so the archive is still useful.
+		}
 	}
 
 	return zipSync(files);

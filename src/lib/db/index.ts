@@ -222,11 +222,21 @@ export async function updateSnapshotLabel(id: number, label: string): Promise<vo
 
 // ── Preferences ─────────────────────────────────────────────────
 
-/** User preferences shape. */
+/**
+ * User preferences shape. Covers editor-UI chrome state plus the
+ * shared diagram-settings model (style, palette, three display
+ * toggles). The diagram fields mirror the live `diagramSettings`
+ * store — they're persisted so the settings survive across sessions.
+ */
 export interface UserPrefs {
 	editorMode: 'customized' | 'smart-table' | 'raw-table';
 	diagramStyle: 'detail' | 'overview';
-	diagramColorMode: 'color' | 'bw';
+	diagramPalette: 'color' | 'bw';
+	showEdges: boolean;
+	showEdgeLabels: boolean;
+	showCardinality: boolean;
+	showLabel: boolean;
+	showProperty: boolean;
 	simpleDspLang: 'en' | 'jp';
 	assistanceEnabled: boolean;
 	sidebarWidth: number;
@@ -237,18 +247,41 @@ export interface UserPrefs {
 export const DEFAULT_PREFS: UserPrefs = {
 	editorMode: 'customized',
 	diagramStyle: 'detail',
-	diagramColorMode: 'color',
+	diagramPalette: 'color',
+	showEdges: true,
+	showEdgeLabels: true,
+	showCardinality: true,
+	showLabel: false,
+	showProperty: true,
 	simpleDspLang: 'en',
 	assistanceEnabled: true,
 	sidebarWidth: 220,
 	diagramPanelWidth: 300,
 };
 
-/** Loads user preferences, returning defaults if none saved. */
+/**
+ * Loads user preferences, returning defaults if none saved.
+ *
+ * Transparently migrates legacy records: the old `diagramColorMode`
+ * field maps to `diagramPalette`, and the pre-0.1.7-beta.51 schema
+ * that lacked the three display toggles gets them filled in from
+ * defaults. No migration is written back until the user updates
+ * their settings, which keeps `loadPrefs` read-only.
+ */
 export async function loadPrefs(): Promise<UserPrefs> {
 	const db = await getDb();
-	const prefs = await db.get('prefs', 'user');
-	return prefs ? { ...DEFAULT_PREFS, ...prefs } : DEFAULT_PREFS;
+	const raw = (await db.get('prefs', 'user')) as Partial<UserPrefs> & {
+		diagramColorMode?: 'color' | 'bw';
+	} | undefined;
+	if (!raw) return DEFAULT_PREFS;
+	const { diagramColorMode, ...rest } = raw;
+	return {
+		...DEFAULT_PREFS,
+		...rest,
+		...(diagramColorMode && !rest.diagramPalette
+			? { diagramPalette: diagramColorMode }
+			: {}),
+	};
 }
 
 /** Saves user preferences. */

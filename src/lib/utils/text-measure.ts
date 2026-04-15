@@ -30,18 +30,28 @@ function getContext(): CanvasRenderingContext2D {
 /**
  * Measures the pixel width of a text string using a canvas context.
  *
+ * The font family matters for anything monospace — JetBrains Mono
+ * glyphs are ~50 % wider than Inter at the same pixel size, so a
+ * background rect sized from an Inter measurement will under-shoot
+ * the mono text. Callers that render in mono should pass `mono`.
+ *
  * @param text - The text to measure.
  * @param fontSize - Font size in pixels (default: 10).
  * @param fontWeight - CSS font weight (default: 'normal').
+ * @param fontFamily - Either `'sans'` or `'mono'`. Defaults to `'sans'`.
  * @returns The measured pixel width.
  */
 export function measureTextWidth(
 	text: string,
 	fontSize: number = 10,
-	fontWeight: string = 'normal'
+	fontWeight: string = 'normal',
+	fontFamily: 'sans' | 'mono' = 'sans'
 ): number {
 	const ctx = getContext();
-	ctx.font = `${fontWeight} ${fontSize}px system-ui, -apple-system, sans-serif`;
+	const family = fontFamily === 'mono'
+		? '"JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace'
+		: '"Inter Variable", Inter, system-ui, -apple-system, sans-serif';
+	ctx.font = `${fontWeight} ${fontSize}px ${family}`;
 	return ctx.measureText(text).width;
 }
 
@@ -57,12 +67,21 @@ export function measureTextWidth(
 export function estimateTextWidth(
 	text: string,
 	fontSize: number = 10,
-	fontWeight: string = 'normal'
+	fontWeight: string = 'normal',
+	fontFamily: 'sans' | 'mono' = 'sans'
 ): number {
-	// Average character width ratios for system-ui
-	const baseRatio = fontWeight === 'bold' || fontWeight === '600' || fontWeight === '700'
-		? 0.62
-		: 0.56;
+	// Average character width ratios. Mono glyphs are fixed-width and
+	// noticeably wider than proportional sans at the same pixel size;
+	// JetBrains Mono sits around 0.60. Inter at regular is ~0.55,
+	// ~0.60 at bold.
+	let baseRatio: number;
+	if (fontFamily === 'mono') {
+		baseRatio = 0.60;
+	} else {
+		baseRatio = fontWeight === 'bold' || fontWeight === '600' || fontWeight === '700'
+			? 0.62
+			: 0.56;
+	}
 	return text.length * fontSize * baseRatio;
 }
 
@@ -77,14 +96,15 @@ export function estimateTextWidth(
 export function safeTextWidth(
 	text: string,
 	fontSize: number = 10,
-	fontWeight: string = 'normal'
+	fontWeight: string = 'normal',
+	fontFamily: 'sans' | 'mono' = 'sans'
 ): number {
 	try {
 		if (typeof document !== 'undefined') {
-			return measureTextWidth(text, fontSize, fontWeight);
+			return measureTextWidth(text, fontSize, fontWeight, fontFamily);
 		}
 	} catch {
 		// Fall through to estimation
 	}
-	return estimateTextWidth(text, fontSize, fontWeight);
+	return estimateTextWidth(text, fontSize, fontWeight, fontFamily);
 }

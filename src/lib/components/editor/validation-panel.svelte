@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { TapirProject } from '$lib/types';
 	import { validateProject } from '$lib/utils/validation';
+	import { getCachedVocab } from '$lib/vocab/vocab-loader';
 	import { selectedDescriptionId } from '$lib/stores';
 	import { Badge } from '$lib/components/ui/badge';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
@@ -17,7 +18,12 @@
 
 	let { project, open = $bindable(), onclose }: Props = $props();
 
-	let result = $derived(validateProject(project));
+	// Pass the cached-vocab lookup so the panel surfaces Tier-2
+	// property-range / property-domain coherence warnings alongside
+	// the existing syntactic checks. The lookup is read-only and
+	// silently returns undefined for prefixes whose chunk hasn't
+	// loaded yet, so unknown vocabs produce zero false positives.
+	let result = $derived(validateProject(project, { getCachedVocab }));
 	let errorCount = $derived(result.errors.length);
 	let warningCount = $derived(result.warnings.length);
 	let isClean = $derived(errorCount === 0 && warningCount === 0);

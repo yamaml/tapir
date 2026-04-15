@@ -38,3 +38,4 @@ npm-debug.log*
 
 # AI assistant config (per-machine, never committed)
 CLAUDE.md
+.claude/

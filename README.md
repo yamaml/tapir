@@ -1,4 +1,4 @@
-# Tapir
+# <img src="https://yamaml.github.io/tapir/tapir-logo.png" alt="Tapir logo" width="48" height="48" align="top"> &nbsp;Tapir
 
 **Tapir** is a browser-based, privacy-first editor for tabular metadata application profiles. It lets you author, validate, convert, and document profiles in [SimpleDSP](https://docs.yamaml.org/specs/simpledsp/spec/) and [DCTAP](https://www.dublincore.org/specifications/dctap/) without sending any data to a server.
 
@@ -96,3 +96,16 @@ Tapir reads and writes the formats defined at:
 ## Licence
 
 [MIT](./LICENSE) © 2026 Nishad Thalhath and contributors
+
+### Bundled fonts
+
+Tapir ships two fonts, both under the [SIL Open Font License 1.1](./static/fonts/Inter-LICENSE.txt):
+
+- [Inter](https://rsms.me/inter/) (v4.1) — UI body text, card titles, form labels.
+- [JetBrains Mono](https://www.jetbrains.com/mono/) (v2.304) — property IRIs, code, and anything shown as `.font-mono` in the UI.
+
+The TTF files live under `static/fonts/` and are used both in the UI (via `@fontsource-variable/*`) and embedded into exported diagram PDFs so text stays vector-selectable and visually consistent across outputs.
+
+### Icon
+
+The Tapir icon is by [Saeful Muslim](https://thenounproject.com/creator/rebelsaeful/) and is used under a Royalty-Free License through [the Noun Project](https://thenounproject.com/about/).

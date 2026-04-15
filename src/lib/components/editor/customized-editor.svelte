@@ -16,6 +16,7 @@
 	import FieldError from '$lib/components/editor/field-error.svelte';
 	import { reorderStatements } from '$lib/stores';
 	import { createDragHandlers } from '$lib/utils/drag-reorder';
+	import { statementMatchesQuery } from '$lib/utils/search-match';
 	import Copy from 'lucide-svelte/icons/copy';
 	import Trash2 from 'lucide-svelte/icons/trash-2';
 	import Plus from 'lucide-svelte/icons/plus';
@@ -25,9 +26,11 @@
 		description: Description;
 		flavor: Flavor;
 		isFirst?: boolean;
+		/** Active search query from the toolbar; empty means no search. */
+		searchQuery?: string;
 	}
 
-	let { description, flavor, isFirst = false }: Props = $props();
+	let { description, flavor, isFirst = false, searchQuery = '' }: Props = $props();
 
 	/** MAIN is a fixed block ID in SimpleDSP — cannot be renamed. */
 	let nameReadonly = $derived(isFirst && flavor === 'simpledsp');
@@ -51,6 +54,22 @@
 		reorderStatements(description.id, from, to);
 	});
 	let dragOverIndex = $state(-1);
+
+	// Scroll the first statement that matches the active search query
+	// into view. Runs whenever the query or the description changes —
+	// debounced to microtasks so it doesn't fire mid-keystroke before
+	// the DOM has rendered the `data-search-match` attributes.
+	$effect(() => {
+		const q = searchQuery;
+		const descId = description.id;
+		if (!q) return;
+		queueMicrotask(() => {
+			const first = document.querySelector<HTMLElement>(
+				`[data-description-id="${descId}"] [data-search-match="true"]`
+			);
+			if (first) first.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+		});
+	});
 
 	/** Track which statement has the constraint popover open. */
 	let constraintPopoverStmt = $state<string | null>(null);
@@ -205,7 +224,7 @@
 	}
 </script>
 
-<div class="space-y-4">
+<div class="space-y-4" data-description-id={description.id}>
 	<!-- Description header section -->
 	<Card>
 		<CardHeader class="pb-3 pt-4 px-4">
@@ -303,6 +322,8 @@
 
 	<!-- Statement cards -->
 	{#each description.statements as stmt, i (stmt.id)}
+		{@const isMatch = !!searchQuery && statementMatchesQuery(stmt, searchQuery)}
+		{@const isDimmed = !!searchQuery && !isMatch}
 		<div
 			draggable="true"
 			ondragstart={(e) => drag.handleDragStart(e, i)}
@@ -310,11 +331,12 @@
 			ondragleave={() => { dragOverIndex = -1; }}
 			ondrop={(e) => { drag.handleDrop(e); dragOverIndex = -1; }}
 			ondragend={(e) => { drag.handleDragEnd(e); dragOverIndex = -1; }}
+			data-search-match={isMatch ? 'true' : undefined}
 			class="transition-all {dragOverIndex === i && drag.getDragIndex() !== i
 				? 'border-t-2 border-t-primary pt-1'
 				: 'border-t-2 border-t-transparent'}"
 		>
-		<Card class="group relative">
+		<Card class="group relative transition-opacity {isMatch ? 'ring-2 ring-primary/50 ring-offset-1 ring-offset-background' : ''} {isDimmed ? 'opacity-40' : ''}">
 			<CardHeader class="pb-2 pt-3 px-4">
 				<div class="flex items-start justify-between gap-2">
 					<div class="flex items-center gap-2 min-w-0">

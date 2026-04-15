@@ -28,6 +28,7 @@ import type { TapirProject, Description, Statement, Flavor } from '$lib/types';
 import type { ParseMessage } from '$lib/types/export';
 import { getFlavorLabels } from '$lib/types';
 import { STANDARD_PREFIXES } from '$lib/converters/simpledsp-generator';
+import { validateStatementVocab, type VocabLookup } from './vocab-validation';
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -162,7 +163,8 @@ export function validateStatement(
 	descName: string,
 	namespaces: Record<string, string>,
 	descriptionNames: Set<string>,
-	flavor: Flavor = 'simpledsp'
+	flavor: Flavor = 'simpledsp',
+	vocabContext?: { desc: Description; vocabs: VocabLookup }
 ): ValidationResult {
 	const errors: ParseMessage[] = [];
 	const warnings: ParseMessage[] = [];
@@ -277,6 +279,17 @@ export function validateStatement(
 		}
 	}
 
+	// 6. Tier-2 vocabulary-aware checks. Opt-in: silently skipped
+	// unless the caller supplies a `vocabs` lookup. Each individual
+	// check inside also short-circuits on missing vocab data, so an
+	// unknown property or unrecognised range/domain produces zero
+	// warnings (rather than false positives).
+	if (vocabContext) {
+		warnings.push(
+			...validateStatementVocab(stmt, vocabContext.desc, fieldKey, vocabContext.vocabs),
+		);
+	}
+
 	return { errors, warnings };
 }
 
@@ -295,7 +308,10 @@ export function validateStatement(
  *   console.error('Validation errors:', result.errors);
  * }
  */
-export function validateProject(project: TapirProject): ValidationResult {
+export function validateProject(
+	project: TapirProject,
+	vocabs?: VocabLookup,
+): ValidationResult {
 	const errors: ParseMessage[] = [];
 	const warnings: ParseMessage[] = [];
 	const flavor: Flavor = project.flavor ?? 'simpledsp';
@@ -373,14 +389,18 @@ export function validateProject(project: TapirProject): ValidationResult {
 			}
 		}
 
-		// 4 + 5. Statement-level + DCTAP rules
+		// 4 + 5 + 6. Statement-level + DCTAP rules + (optional) vocab
+		// coherence. Tier-2 vocab checks fire only when the caller
+		// supplies a vocab lookup; they emit warnings only.
+		const vocabContext = vocabs ? { desc, vocabs } : undefined;
 		for (const stmt of desc.statements) {
 			const result = validateStatement(
 				stmt,
 				desc.name,
 				project.namespaces,
 				descriptionNames,
-				flavor
+				flavor,
+				vocabContext,
 			);
 			errors.push(...result.errors);
 			warnings.push(...result.warnings);

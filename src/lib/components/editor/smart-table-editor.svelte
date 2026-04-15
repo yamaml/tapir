@@ -12,6 +12,7 @@
 	import * as Popover from '$lib/components/ui/popover';
 	import ConstraintEditor from '$lib/components/editor/constraint-editor.svelte';
 	import ShapeRefPicker from '$lib/components/editor/shape-ref-picker.svelte';
+	import { statementMatchesQuery } from '$lib/utils/search-match';
 
 	import ToggleLeft from 'lucide-svelte/icons/toggle-left';
 	import ToggleRight from 'lucide-svelte/icons/toggle-right';
@@ -19,9 +20,26 @@
 	interface Props {
 		description: Description;
 		flavor: Flavor;
+		/** Active search query from the toolbar; empty means no search. */
+		searchQuery?: string;
 	}
 
-	let { description, flavor }: Props = $props();
+	let { description, flavor, searchQuery = '' }: Props = $props();
+
+	// Scroll the first matching row into view when the query changes.
+	// Mirrors customized-editor's behaviour for UX consistency across
+	// the three editor modes.
+	$effect(() => {
+		const q = searchQuery;
+		const descId = description.id;
+		if (!q) return;
+		queueMicrotask(() => {
+			const first = document.querySelector<HTMLElement>(
+				`[data-description-id="${descId}"] [data-search-match="true"]`
+			);
+			if (first) first.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+		});
+	});
 
 	let labels = $derived(getFlavorLabels(flavor, $simpleDspLang));
 
@@ -282,7 +300,7 @@
 	}
 </script>
 
-<div class="space-y-3">
+<div class="space-y-3" data-description-id={description.id}>
 	<!-- Assistance toggle -->
 	<div class="flex items-center gap-3 px-1 pb-1">
 		<button
@@ -330,10 +348,15 @@
 			</thead>
 			<tbody>
 				{#each description.statements as stmt, rowIndex (stmt.id)}
+					{@const isMatch = !!searchQuery && statementMatchesQuery(stmt, searchQuery)}
+					{@const isDimmed = !!searchQuery && !isMatch}
 					<tr
-						class="group border-b border-border last:border-b-0 transition-colors
+						data-search-match={isMatch ? 'true' : undefined}
+						class="group border-b border-border last:border-b-0 transition-[background-color,opacity]
 							{rowIndex % 2 === 0 ? 'bg-card' : 'bg-background'}
-							{hasErrors(stmt) ? 'border-l-2 border-l-destructive' : ''}"
+							{hasErrors(stmt) ? 'border-l-2 border-l-destructive' : ''}
+							{isMatch ? '!bg-primary/10' : ''}
+							{isDimmed ? 'opacity-40' : ''}"
 					>
 						{#each columns as col, colIndex}
 							{#if col.field === 'actions'}

@@ -4,8 +4,9 @@
 	import { goto } from '$app/navigation';
 	import { base } from '$app/paths';
 	import { loadProject, saveProject, saveSnapshot, getSnapshots, pruneAutoSnapshots, loadPrefs, savePrefs } from '$lib/db';
-	import { currentProject, selectedDescriptionId, editorMode, diagramVisible, refreshProjectsList, simpleDspLang } from '$lib/stores';
+	import { currentProject, selectedDescriptionId, editorMode, diagramVisible, refreshProjectsList, simpleDspLang, diagramSettings } from '$lib/stores';
 	import { computeContentHash } from '$lib/utils/snapshot-utils';
+	import { descriptionMatchesQuery, countStatementMatches } from '$lib/utils/search-match';
 	import { undo, redo } from '$lib/stores/history-store';
 	// Vocab loading is now lazy — triggered by autocomplete when user types a prefix
 	import { getFlavorLabels } from '$lib/types';
@@ -121,14 +122,59 @@
 		}
 	});
 
+	// Persist changes to the diagram settings so they survive page
+	// reloads. The subscription starts firing as soon as the store
+	// hydrates in `onMount`; we debounce writes to avoid hammering
+	// IndexedDB on rapid toggle flips. Cleanup is registered here at
+	// the top level because `onDestroy` can't run inside async flows.
+	let diagramPersistTimer: ReturnType<typeof setTimeout> | undefined;
+	let hydratedFromPrefs = false;
+	const unsubDiagramSettings = diagramSettings.subscribe((s) => {
+		if (!hydratedFromPrefs) return; // skip initial default emission
+		if (diagramPersistTimer) clearTimeout(diagramPersistTimer);
+		diagramPersistTimer = setTimeout(async () => {
+			try {
+				const prev = await loadPrefs();
+				await savePrefs({
+					...prev,
+					diagramStyle: s.style,
+					diagramPalette: s.palette,
+					showEdges: s.showEdges,
+					showEdgeLabels: s.showEdgeLabels,
+					showCardinality: s.showCardinality,
+					showLabel: s.showLabel,
+					showProperty: s.showProperty,
+				});
+			} catch {
+				// silent — next reload simply uses defaults
+			}
+		}, 500);
+	});
+	onDestroy(() => {
+		if (diagramPersistTimer) clearTimeout(diagramPersistTimer);
+		unsubDiagramSettings();
+	});
+
 	onMount(async () => {
-		// Hydrate the SimpleDSP language from persisted prefs.
+		// Hydrate the SimpleDSP language + diagram settings from
+		// persisted prefs so the user's last choices carry across
+		// sessions.
 		try {
 			const prefs = await loadPrefs();
 			simpleDspLang.set(prefs.simpleDspLang);
+			diagramSettings.set({
+				style: prefs.diagramStyle,
+				palette: prefs.diagramPalette,
+				showEdges: prefs.showEdges,
+				showEdgeLabels: prefs.showEdgeLabels,
+				showCardinality: prefs.showCardinality,
+				showLabel: prefs.showLabel,
+				showProperty: prefs.showProperty,
+			});
 		} catch {
-			// silent — falls back to the store default ('en')
+			// silent — falls back to the store defaults
 		}
+		hydratedFromPrefs = true;
 
 		const id = page.params.id;
 		if (!id) {
@@ -246,26 +292,22 @@
 	}
 
 	// ── Search ───────────────────────────────────────────────────
-	/** Check if a description matches the search query (case-insensitive). */
-	function descriptionMatchesQuery(desc: TapirProject['descriptions'][number], q: string): boolean {
-		const lower = q.toLowerCase();
-		if (desc.name.toLowerCase().includes(lower)) return true;
-		if (desc.label.toLowerCase().includes(lower)) return true;
-		if (desc.note.toLowerCase().includes(lower)) return true;
-		return desc.statements.some(
-			(st) =>
-				st.label.toLowerCase().includes(lower) ||
-				st.propertyId.toLowerCase().includes(lower) ||
-				st.note.toLowerCase().includes(lower)
-		);
-	}
+	// See `$lib/utils/search-match` for the shared matching rules that
+	// the sidebar filter, statement highlights, and match counter all
+	// consult. This page only uses the description-level predicate to
+	// auto-select the first matching description when the query changes.
 
-	// Auto-select first matching description when search query changes
 	$effect(() => {
 		if (!searchQuery || !project) return;
 		const match = project.descriptions.find((d) => descriptionMatchesQuery(d, searchQuery));
 		if (match) selectedDescriptionId.set(match.id);
 	});
+
+	/** Match count inside the currently selected description. Drives the
+	 * badge next to the search input. */
+	let currentDescriptionMatchCount = $derived(
+		searchQuery && selectedDesc ? countStatementMatches(selectedDesc, searchQuery) : 0
+	);
 
 	function toggleSearch() {
 		searchVisible = !searchVisible;
@@ -383,22 +425,36 @@
 				<SearchIcon class="h-3.5 w-3.5" />
 			</Button>
 			{#if searchVisible}
-				<div class="relative flex items-center">
-					<input
-						bind:this={searchInput}
-						type="text"
-						placeholder="Search properties..."
-						class="flex h-7 w-48 rounded-md border border-input bg-background px-2 py-1 text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 pr-7"
-						bind:value={searchQuery}
-						onkeydown={handleSearchKeydown}
-					/>
+				<div class="relative flex items-center gap-1.5">
+					<div class="relative flex items-center">
+						<input
+							bind:this={searchInput}
+							type="text"
+							placeholder="Search properties..."
+							class="flex h-7 w-48 rounded-md border border-input bg-background px-2 py-1 text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 pr-7"
+							bind:value={searchQuery}
+							onkeydown={handleSearchKeydown}
+						/>
+						{#if searchQuery}
+							<button
+								class="absolute right-1.5 text-muted-foreground hover:text-foreground"
+								onclick={() => { searchQuery = ''; searchInput?.focus(); }}
+							>
+								<X class="h-3.5 w-3.5" />
+							</button>
+						{/if}
+					</div>
+					<!-- Match-count badge. Tells the user exactly what the
+						 search hit inside the currently open description —
+						 answers the "where is the search applied?" question
+						 directly. Hidden when the query is empty. -->
 					{#if searchQuery}
-						<button
-							class="absolute right-1.5 text-muted-foreground hover:text-foreground"
-							onclick={() => { searchQuery = ''; searchInput?.focus(); }}
+						<span
+							class="text-[10px] font-medium tabular-nums rounded px-1.5 py-0.5 {currentDescriptionMatchCount > 0 ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground'}"
+							title={currentDescriptionMatchCount > 0 ? `${currentDescriptionMatchCount} matching ${currentDescriptionMatchCount === 1 ? 'statement' : 'statements'} in this ${labels.descriptionSingular.toLowerCase()}` : 'No matching statements in this ' + labels.descriptionSingular.toLowerCase()}
 						>
-							<X class="h-3.5 w-3.5" />
-						</button>
+							{currentDescriptionMatchCount} here
+						</span>
 					{/if}
 				</div>
 			{/if}
@@ -456,9 +512,9 @@
 					{:else if selectedDesc}
 						<div class="p-4">
 							{#if modeValue === 'customized'}
-								<CustomizedEditor description={selectedDesc} flavor={project.flavor} isFirst={isFirstDesc} />
+								<CustomizedEditor description={selectedDesc} flavor={project.flavor} isFirst={isFirstDesc} {searchQuery} />
 							{:else if modeValue === 'smart-table'}
-								<SmartTableEditor description={selectedDesc} flavor={project.flavor} />
+								<SmartTableEditor description={selectedDesc} flavor={project.flavor} {searchQuery} />
 							{/if}
 						</div>
 					{:else}

@@ -8,7 +8,18 @@
 		typeLabel,
 		COLOR_PALETTE,
 	} from '$lib/converters/diagram-generator';
-	import { selectedDescriptionId } from '$lib/stores';
+	import {
+		selectedDescriptionId,
+		diagramSettings,
+		edgeLabelsDisabled,
+		getDiagramSettings,
+	} from '$lib/stores';
+	import { buildExportSvg } from '$lib/converters/export-svg-builder';
+	import { downloadBlob } from '$lib/utils/file-io';
+	import {
+		toggleShowLabel,
+		toggleShowProperty,
+	} from '$lib/stores/diagram-settings-store';
 	import { downloadText } from '$lib/utils/file-io';
 	import { safeTextWidth } from '$lib/utils/text-measure';
 	import ELK from 'elkjs/lib/elk.bundled.js';
@@ -16,6 +27,7 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import Download from 'lucide-svelte/icons/download';
 	import FileCode2 from 'lucide-svelte/icons/file-code-2';
+	import FileText from 'lucide-svelte/icons/file-text';
 	import Maximize2 from 'lucide-svelte/icons/maximize-2';
 	import Minimize2 from 'lucide-svelte/icons/minimize-2';
 	import ZoomIn from 'lucide-svelte/icons/zoom-in';
@@ -29,9 +41,26 @@
 
 	let { project }: Props = $props();
 
-	let style = $state<'detail' | 'overview'>('detail');
-	let showLabels = $state(true);
-	let showCardinality = $state(true);
+	// Diagram settings come from the shared store so the in-editor
+	// preview and the Export dialog stay synchronised. The derived
+	// values below collapse the dependency rule (edge labels require
+	// edges) so rendering code can treat them as simple booleans.
+	let style = $derived($diagramSettings.style);
+	const showEdges = $derived($diagramSettings.showEdges);
+	const showEdgeLabels = $derived($diagramSettings.showEdges && $diagramSettings.showEdgeLabels);
+	const showCardinality = $derived($diagramSettings.showCardinality);
+	// Alias preserved for template blocks that previously read
+	// `showLabels` — SVG-rendered edge text is gated by both: we
+	// only draw edge-label text when edges are on *and* labels are on.
+	const showLabels = $derived(showEdgeLabels);
+	// Row-content toggles (at-least-one invariant enforced by the
+	// store). Rendering logic:
+	//   both on  → label (bold) on top, IRI (muted) beneath
+	//   label    → just the label
+	//   property → just the IRI
+	const showLabel = $derived($diagramSettings.showLabel);
+	const showProperty = $derived($diagramSettings.showProperty);
+	const showBoth = $derived(showLabel && showProperty);
 	let expanded = $state(false);
 	let svgEl: SVGSVGElement | undefined = $state();
 	let hoveredEdgeId = $state<string | null>(null);
@@ -233,7 +262,10 @@
 		let maxTypeWidth = 0;
 		for (const stmt of desc.statements) {
 			const prop = compactIRI(stmt.propertyId, ns) || stmt.id;
-			maxPropWidth = Math.max(maxPropWidth, safeTextWidth(prop, 10, '600'));
+			// Row property IRIs are rendered in JetBrains Mono; measure
+			// with mono metrics so node width accommodates actual glyph
+			// widths, not Inter's narrower ones.
+			maxPropWidth = Math.max(maxPropWidth, safeTextWidth(prop, 10, 'bold', 'mono'));
 			const tl = typeLabel(stmt, ns);
 			const refs = stmt.shapeRefs ?? [];
 			const prefix = refs.includes(desc.name) ? '\u21BA ' : (refs.length > 0 ? '\u2192 ' : '');
@@ -518,7 +550,11 @@
 	$effect(() => {
 		const _proj = project;
 		const _style = style;
-		const _showLabels = showLabels;
+		// Track the three display toggles so the effect re-runs when
+		// they change — Elk's edge routing depends on label presence
+		// and width reservations, so the layout has to recompute.
+		const _showEdges = showEdges;
+		const _showEdgeLabels = showEdgeLabels;
 		const _showCard = showCardinality;
 
 		if (debounceTimer) clearTimeout(debounceTimer);
@@ -653,9 +689,15 @@
 	// ── Edge label sizing ───────────────────────────────────────────
 
 	function edgeLabelWidth(edge: LayoutEdge): number {
-		const labelText = showLabels && edge.stmtLabel ? edge.stmtLabel : edge.propertyLabel;
-		const fullText = showCardinality ? `${labelText} [${edge.cardinality}]` : labelText;
-		return safeTextWidth(fullText, 8, 'normal') + 12;
+		// Edge labels always display as "{label-or-property} [card]" when
+		// rendered at all. This function computes the width reservation
+		// for Elk; the rendering gate lives in the template. Prefer the
+		// statement's human-readable label when present, fall back to
+		// the property IRI.
+		const labelText = edge.stmtLabel || edge.propertyLabel;
+		// Edge labels render in JetBrains Mono; measure with mono
+		// metrics so the background rect actually covers the text.
+		return safeTextWidth(`${labelText} [${edge.cardinality}]`, 8, 'normal', 'mono') + 12;
 	}
 
 	// ── Interactivity ───────────────────────────────────────────────
@@ -752,6 +794,31 @@
 		downloadText(dot, `${project.name || 'diagram'}.dot`, 'text/vnd.graphviz');
 	}
 
+	let exportingPdf = $state(false);
+
+	async function exportPdf(): Promise<void> {
+		if (exportingPdf) return;
+		exportingPdf = true;
+		try {
+			// Re-render through the shared SVG builder rather than the
+			// live DOM. svg2pdf needs `text-anchor="start"` for edge
+			// labels and explicit font-family declarations on every
+			// `<text>`; the live preview SVG uses `text-anchor="middle"`
+			// for browser layout, so feeding it directly to svg2pdf
+			// drifts the labels relative to their backgrounds.
+			const settings = getDiagramSettings();
+			const svg = await buildExportSvg(project, settings);
+			const { svgToPdfBlob } = await import('$lib/utils/svg-to-pdf');
+			const pdfBlob = await svgToPdfBlob(svg);
+			const suffix = settings.palette === 'bw' ? '-diagram-bw' : '-diagram';
+			downloadBlob(pdfBlob, `${project.name || 'diagram'}${suffix}.pdf`);
+		} catch (err) {
+			console.error('PDF export failed:', err);
+		} finally {
+			exportingPdf = false;
+		}
+	}
+
 	// ── XML escape ──────────────────────────────────────────────────
 
 	function escXml(s: string): string {
@@ -798,7 +865,7 @@
 									class="flex-1 px-2 py-1 transition {style === 'detail'
 										? 'bg-accent font-medium text-accent-foreground'
 										: 'text-muted-foreground hover:bg-accent/50'}"
-									onclick={() => (style = 'detail')}
+									onclick={() => diagramSettings.update((s) => ({ ...s, style: 'detail' }))}
 								>
 									Detail
 								</button>
@@ -806,14 +873,21 @@
 									class="flex-1 px-2 py-1 transition {style === 'overview'
 										? 'bg-accent font-medium text-accent-foreground'
 										: 'text-muted-foreground hover:bg-accent/50'}"
-									onclick={() => (style = 'overview')}
+									onclick={() => diagramSettings.update((s) => ({ ...s, style: 'overview' }))}
 								>
 									Overview
 								</button>
 							</div>
 						</div>
 
-						<!-- Display -->
+						<!-- Display toggles.
+							 - Show edge labels depends on Show edges: labels
+							   have nothing to attach to if edges are hidden,
+							   so the checkbox greys out when edges are off.
+							 - Show label / Show property have an at-least-
+							   one-on invariant enforced by the store helpers.
+							   Turning off the only on option auto-flips the
+							   other. -->
 						<div>
 							<p class="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Display</p>
 							<div class="space-y-1.5">
@@ -821,7 +895,36 @@
 									<span class="text-xs text-foreground">Show labels</span>
 									<input
 										type="checkbox"
-										bind:checked={showLabels}
+										checked={$diagramSettings.showLabel}
+										onchange={(e) => toggleShowLabel((e.currentTarget as HTMLInputElement).checked)}
+										class="h-3.5 w-3.5 rounded border-border accent-primary"
+									/>
+								</label>
+								<label class="flex items-center justify-between cursor-pointer">
+									<span class="text-xs text-foreground">Show properties</span>
+									<input
+										type="checkbox"
+										checked={$diagramSettings.showProperty}
+										onchange={(e) => toggleShowProperty((e.currentTarget as HTMLInputElement).checked)}
+										class="h-3.5 w-3.5 rounded border-border accent-primary"
+									/>
+								</label>
+								<label class="flex items-center justify-between cursor-pointer">
+									<span class="text-xs text-foreground">Show edges</span>
+									<input
+										type="checkbox"
+										checked={$diagramSettings.showEdges}
+										onchange={(e) => diagramSettings.update((s) => ({ ...s, showEdges: (e.currentTarget as HTMLInputElement).checked }))}
+										class="h-3.5 w-3.5 rounded border-border accent-primary"
+									/>
+								</label>
+								<label class="flex items-center justify-between {$edgeLabelsDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}">
+									<span class="text-xs text-foreground">Show edge labels</span>
+									<input
+										type="checkbox"
+										checked={$diagramSettings.showEdgeLabels}
+										disabled={$edgeLabelsDisabled}
+										onchange={(e) => diagramSettings.update((s) => ({ ...s, showEdgeLabels: (e.currentTarget as HTMLInputElement).checked }))}
 										class="h-3.5 w-3.5 rounded border-border accent-primary"
 									/>
 								</label>
@@ -829,7 +932,8 @@
 									<span class="text-xs text-foreground">Show cardinality</span>
 									<input
 										type="checkbox"
-										bind:checked={showCardinality}
+										checked={$diagramSettings.showCardinality}
+										onchange={(e) => diagramSettings.update((s) => ({ ...s, showCardinality: (e.currentTarget as HTMLInputElement).checked }))}
 										class="h-3.5 w-3.5 rounded border-border accent-primary"
 									/>
 								</label>
@@ -840,7 +944,7 @@
 						<Separator />
 						<div>
 							<p class="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Export</p>
-							<div class="grid grid-cols-3 gap-1.5">
+							<div class="grid grid-cols-2 gap-1.5">
 								<button
 									onclick={exportSvg}
 									class="flex items-center justify-center gap-1 rounded-md border border-border px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground [&_svg]:pointer-events-none"
@@ -855,6 +959,14 @@
 								>
 									<Download class="h-3 w-3" />
 									{exportingPng ? '...' : 'PNG'}
+								</button>
+								<button
+									onclick={exportPdf}
+									disabled={exportingPdf}
+									class="flex items-center justify-center gap-1 rounded-md border border-border px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-50 [&_svg]:pointer-events-none"
+								>
+									<FileText class="h-3 w-3" />
+									{exportingPdf ? '...' : 'PDF'}
 								</button>
 								<button
 									onclick={exportDot}
@@ -956,7 +1068,7 @@
 					y="100"
 					text-anchor="middle"
 					fill="#999"
-					font-family="system-ui"
+					font-family="Inter, system-ui, sans-serif"
 					font-size="14"
 				>
 					No descriptions to display
@@ -976,7 +1088,7 @@
 				class="h-full w-full {expanded
 					? `select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`
 					: ''}"
-				font-family="system-ui, -apple-system, sans-serif"
+				font-family="Inter, system-ui, -apple-system, sans-serif"
 				onpointerdown={handlePointerDown}
 				onpointermove={handlePointerMove}
 				onpointerup={handlePointerUp}
@@ -1063,7 +1175,11 @@
 					fill={pal.graphBg}
 				/>
 
-				<!-- Edges (render behind nodes) -->
+				<!-- Edges (render behind nodes). Entire group is
+					 suppressed when Show-edges is off — neither the
+					 visible path, the hit area, nor the label block
+					 renders. -->
+				{#if showEdges}
 				{#each layoutEdges as edge, edgeIdx (edge.id)}
 					{#each edge.sections as section, si}
 						{@const isHovered = hoveredEdgeId === edge.id}
@@ -1088,38 +1204,47 @@
 								: 'url(#arrowhead)'}
 							style="transition: stroke 0.15s, stroke-width 0.15s; pointer-events: none;"
 						/>
-						<!-- Edge label -->
-						{@const labelPos = edgeLabelPos(section)}
-						{@const lblWidth = edgeLabelWidth(edge)}
-						<g
-							onmouseenter={() => (hoveredEdgeId = edge.id)}
-							onmouseleave={() => (hoveredEdgeId = null)}
-							style="cursor: {expanded ? 'inherit' : 'pointer'};"
-						>
-							<rect
-								x={labelPos.x - lblWidth / 2}
-								y={labelPos.y - 10}
-								width={lblWidth}
-								height="16"
-								fill={pal.edgeLabelBg}
-								opacity="0.9"
-								rx="3"
-								stroke={isHovered ? '#1565C0' : '#e0e0e0'}
-								stroke-width="0.5"
-							/>
-							<text
-								x={labelPos.x}
-								y={labelPos.y + 2}
-								text-anchor="middle"
-								font-size="8"
-								fill={isHovered ? '#1565C0' : pal.edgeLabelText}
-								style="transition: fill 0.15s;"
+						<!-- Edge label: the `property [card]` text riding on
+							 the edge line. Gated on `showEdgeLabels` so the
+							 user can strip decoration without losing the
+							 edge itself. The inline "stmtLabel vs
+							 propertyLabel" choice below simply prefers the
+							 statement's display label when non-empty. -->
+						{#if showEdgeLabels}
+							{@const labelPos = edgeLabelPos(section)}
+							{@const lblWidth = edgeLabelWidth(edge)}
+							<g
+								onmouseenter={() => (hoveredEdgeId = edge.id)}
+								onmouseleave={() => (hoveredEdgeId = null)}
+								style="cursor: {expanded ? 'inherit' : 'pointer'};"
 							>
-								{showLabels && edge.stmtLabel ? edge.stmtLabel : edge.propertyLabel}{#if showCardinality} [{edge.cardinality}]{/if}
-							</text>
-						</g>
+								<rect
+									x={labelPos.x - lblWidth / 2}
+									y={labelPos.y - 10}
+									width={lblWidth}
+									height="16"
+									fill={pal.edgeLabelBg}
+									opacity="0.9"
+									rx="3"
+									stroke={isHovered ? '#1565C0' : '#e0e0e0'}
+									stroke-width="0.5"
+								/>
+								<text
+									x={labelPos.x}
+									y={labelPos.y + 2}
+									text-anchor="middle"
+									font-size="8"
+									font-family="var(--font-mono, monospace)"
+									fill={isHovered ? '#1565C0' : pal.edgeLabelText}
+									style="transition: fill 0.15s;"
+								>
+									{edge.stmtLabel || edge.propertyLabel} [{edge.cardinality}]
+								</text>
+							</g>
+						{/if}
 					{/each}
 				{/each}
+				{/if}
 
 				<!-- Nodes -->
 				{#each layoutNodes as node (node.id)}
@@ -1180,6 +1305,7 @@
 								text-anchor="middle"
 								font-size="12"
 								font-weight="bold"
+								font-family="var(--font-sans, sans-serif)"
 								fill={pal.headerText}
 							>
 								{node.label}
@@ -1190,6 +1316,7 @@
 									y={node.y + 34}
 									text-anchor="middle"
 									font-size="9"
+									font-family="var(--font-mono, monospace)"
 									fill={pal.typeText}
 									font-style="italic"
 								>
@@ -1203,6 +1330,7 @@
 									x={node.x + NODE_PAD_H}
 									y={node.y + HEADER_HEIGHT + 18}
 									font-size="10"
+									font-family="var(--font-sans, sans-serif)"
 									fill="#999"
 									font-style="italic"
 								>
@@ -1223,24 +1351,75 @@
 											: pal.bodyBg}
 										rx={si === node.statements.length - 1 ? '5' : '0'}
 									/>
-									<!-- Property name (bold) -->
-									<text
-										x={node.x + NODE_PAD_H}
-										y={rowY + 17}
-										font-size="10"
-										font-weight="600"
-										fill={pal.bodyText}
-									>
-										{showLabels && stmt.label ? stmt.label : stmt.propertyId}
-									</text>
-									<!-- Type label -->
+									<!-- Row content.
+										 - label only: human-readable "Creator"
+										 - property only: IRI "dct:creator" (monospace)
+										 - both: label bold on top, IRI muted below.
+										 The at-least-one invariant lives in the
+										 store, so at least one branch always
+										 fires. `stmt.label` may be empty even
+										 when showLabel is on; we fall back to
+										 the propertyId in that case so the row
+										 never renders blank. -->
+									{#if showBoth}
+										<text
+											x={node.x + NODE_PAD_H}
+											y={rowY + 11}
+											font-size="10"
+											font-weight="bold"
+											font-family="var(--font-sans, sans-serif)"
+											fill={pal.bodyText}
+										>
+											{stmt.label || stmt.propertyId}
+										</text>
+										<text
+											x={node.x + NODE_PAD_H}
+											y={rowY + 22}
+											font-size="8"
+											font-family="var(--font-mono, monospace)"
+											fill={pal.typeText}
+										>
+											{stmt.propertyId}
+										</text>
+									{:else if showLabel}
+										<text
+											x={node.x + NODE_PAD_H}
+											y={rowY + 17}
+											font-size="10"
+											font-weight="bold"
+											font-family="var(--font-sans, sans-serif)"
+											fill={pal.bodyText}
+										>
+											{stmt.label || stmt.propertyId}
+										</text>
+									{:else}
+										<text
+											x={node.x + NODE_PAD_H}
+											y={rowY + 17}
+											font-size="10"
+											font-weight="bold"
+											font-family="var(--font-mono, monospace)"
+											fill={pal.bodyText}
+										>
+											{stmt.propertyId}
+										</text>
+									{/if}
+									<!-- Type label. Aligns with the top line when
+										 both label + property are shown (two-
+										 line rows), otherwise centred. Uses
+										 the sans face — the right-hand text is
+										 always a short word or shape name
+										 ("Literal", "→ Person"), never IRI-
+										 shaped, so proportional reads better. -->
+									{@const metaY = showBoth ? rowY + 11 : rowY + 17}
 									{#if stmt.isSelfRef}
 										<text
 											x={node.x + node.width - CARD_COL_WIDTH - 6}
-											y={rowY + 17}
+											y={metaY}
 											text-anchor="end"
 											font-size="9"
 											font-weight="normal"
+											font-family="var(--font-sans, sans-serif)"
 											fill={pal.selfRefText}
 										>
 											&#x21BA; {stmt.typeLabel}
@@ -1248,10 +1427,11 @@
 									{:else if stmt.isRef}
 										<text
 											x={node.x + node.width - CARD_COL_WIDTH - 6}
-											y={rowY + 17}
+											y={metaY}
 											text-anchor="end"
 											font-size="9"
 											font-weight="normal"
+											font-family="var(--font-sans, sans-serif)"
 											fill={pal.refText}
 										>
 											&#x2192; {stmt.typeLabel}
@@ -1259,21 +1439,25 @@
 									{:else}
 										<text
 											x={node.x + node.width - CARD_COL_WIDTH - 6}
-											y={rowY + 17}
+											y={metaY}
 											text-anchor="end"
 											font-size="9"
+											font-family="var(--font-sans, sans-serif)"
 											fill={pal.typeText}
 										>
 											{stmt.typeLabel}
 										</text>
 									{/if}
-									<!-- Cardinality -->
+									<!-- Cardinality — monospace because it's a
+										 structural code (`0..*`, `1..1`), not
+										 prose; tabular numerals stay lined up. -->
 									{#if showCardinality}
 										<text
 											x={node.x + node.width - 10}
-											y={rowY + 17}
+											y={metaY}
 											text-anchor="end"
 											font-size="9"
+											font-family="var(--font-mono, monospace)"
 											fill={pal.cardText}
 										>
 											{stmt.cardinality}
@@ -1300,6 +1484,7 @@
 								text-anchor="middle"
 								font-size="13"
 								font-weight="bold"
+								font-family="var(--font-sans, sans-serif)"
 								fill={pal.headerText}
 							>
 								{node.label}
@@ -1310,6 +1495,7 @@
 									y={node.y + 38}
 									text-anchor="middle"
 									font-size="11"
+									font-family="var(--font-mono, monospace)"
 									fill={pal.typeText}
 								>
 									{node.targetClass}
@@ -1323,6 +1509,7 @@
 									text-anchor="middle"
 									font-size="9"
 									font-style="italic"
+									font-family="var(--font-mono, monospace)"
 									fill={pal.selfRefText}
 								>
 									&#x21BA; {ref.prop} [{ref.card}]
@@ -1337,7 +1524,7 @@
 						 statements are skipped inside the block — this keeps
 						 the index tied to the row position rather than a
 						 filtered sub-array. -->
-					{#if style === 'detail'}
+					{#if style === 'detail' && showEdges}
 						{#each node.statements as stmt, stmtIdx}
 						{#if stmt.isSelfRef}
 							{@const loopLabelPos = selfRefLabelPos(node, stmtIdx)}
@@ -1349,29 +1536,34 @@
 								marker-end="url(#arrowhead-selfref)"
 								opacity="0.7"
 							/>
-							<!-- Self-ref label -->
-							{@const selfLabelText = (showLabels && stmt.label ? stmt.label : stmt.propertyId) + (showCardinality ? ` [${stmt.cardinality}]` : '')}
-							{@const selfLabelW = safeTextWidth(selfLabelText, 8, 'normal') + 8}
-							<rect
-								x={loopLabelPos.x}
-								y={loopLabelPos.y - 6}
-								width={selfLabelW}
-								height="13"
-								fill={pal.edgeLabelBg}
-								rx="2"
-								opacity="0.9"
-								stroke="#e0e0e0"
-								stroke-width="0.5"
-							/>
-							<text
-								x={loopLabelPos.x + selfLabelW / 2}
-								y={loopLabelPos.y + 4}
-								text-anchor="middle"
-								font-size="8"
-								fill={pal.selfRefText}
-							>
-								{selfLabelText}
-							</text>
+							<!-- Self-ref label — gated on Show-edge-labels
+								 so the loop can be drawn bare (just the
+								 arrow) when the user wants a cleaner view. -->
+							{#if showEdgeLabels}
+								{@const selfLabelText = (stmt.label || stmt.propertyId) + ` [${stmt.cardinality}]`}
+								{@const selfLabelW = safeTextWidth(selfLabelText, 8, 'normal', 'mono') + 8}
+								<rect
+									x={loopLabelPos.x}
+									y={loopLabelPos.y - 6}
+									width={selfLabelW}
+									height="13"
+									fill={pal.edgeLabelBg}
+									rx="2"
+									opacity="0.9"
+									stroke="#e0e0e0"
+									stroke-width="0.5"
+								/>
+								<text
+									x={loopLabelPos.x + selfLabelW / 2}
+									y={loopLabelPos.y + 4}
+									text-anchor="middle"
+									font-size="8"
+									font-family="var(--font-mono, monospace)"
+									fill={pal.selfRefText}
+								>
+									{selfLabelText}
+								</text>
+							{/if}
 						{/if}
 						{/each}
 					{/if}

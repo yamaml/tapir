@@ -8,16 +8,25 @@
 	import { buildShExC } from '$lib/converters/shex-generator';
 	import { buildShacl } from '$lib/converters/shacl-generator';
 	import { buildOwlDsp } from '$lib/converters/owldsp-generator';
-	import { simpleDspLang } from '$lib/stores';
+	import {
+		simpleDspLang,
+		diagramSettings,
+		edgeLabelsDisabled,
+		getDiagramSettings,
+	} from '$lib/stores';
+	import {
+		DEFAULT_DIAGRAM_SETTINGS,
+		toggleShowLabel,
+		toggleShowProperty,
+	} from '$lib/stores/diagram-settings-store';
 	import { validateProject } from '$lib/utils/validation';
 	import { buildYamaYaml } from '$lib/converters/yaml-generator';
 	import { buildYamaJson } from '$lib/converters/json-generator';
 	import { buildDataPackage } from '$lib/converters/datapackage-generator';
-	import { buildDiagram, compactIRI, formatCard, typeLabel, COLOR_PALETTE, BW_PALETTE } from '$lib/converters/diagram-generator';
+	import { buildDiagram } from '$lib/converters/diagram-generator';
 	import { generateHtmlReport } from '$lib/converters/report-generator';
 	import { generatePackageZip } from '$lib/converters/package-generator';
-	import { safeTextWidth } from '$lib/utils/text-measure';
-	import ELK from 'elkjs/lib/elk.bundled.js';
+	import { buildExportSvg } from '$lib/converters/export-svg-builder';
 	import { Dialog, DialogContent, DialogHeader, DialogTitle } from '$lib/components/ui/dialog';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import { Separator } from '$lib/components/ui/separator';
@@ -47,199 +56,6 @@
 	let exportError = $state<string | null>(null);
 
 	// ── SVG/PNG Export Helpers ──────────────────────────────────────
-
-	const elk = new ELK();
-
-	/** Generate a standalone SVG string using Elk.js layout. */
-	async function generateExportSvg(proj: TapirProject, mode: 'color' | 'bw'): Promise<string> {
-		const pal = mode === 'bw' ? BW_PALETTE : COLOR_PALETTE;
-		const ns = proj.namespaces || {};
-		const descriptions = proj.descriptions || [];
-		const descNames = new Set(descriptions.map((d) => d.name));
-
-		if (descriptions.length === 0) {
-			return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200"><text x="200" y="100" text-anchor="middle" fill="#999" font-size="14">No descriptions</text></svg>';
-		}
-
-		const HEADER_H = 48, ROW_H = 26, BASE_W = 280, PAD = 40;
-		const NODE_PAD_H = 14, CARD_COL_W = 44;
-		const children: Array<{ id: string; width: number; height: number }> = [];
-		const edges: Array<{ id: string; sources: string[]; targets: string[] }> = [];
-		const nodeMeta = new Map<string, { desc: typeof descriptions[0]; headerColor: string; stmts: Array<{ prop: string; tl: string; card: string; isRef: boolean; isSelfRef: boolean }> }>();
-		const edgeMeta = new Map<string, { prop: string; card: string }>();
-		let ei = 0;
-
-		for (let i = 0; i < descriptions.length; i++) {
-			const desc = descriptions[i];
-			const stmts = desc.statements.map((s) => {
-				const prop = compactIRI(s.propertyId, ns) || s.id;
-				const refs = s.shapeRefs ?? [];
-				const resolved = refs.filter((r) => descNames.has(r));
-				const isRef = resolved.length > 0;
-				const isSelfRef = resolved.length === 1 && resolved[0] === desc.name;
-				return { prop, tl: typeLabel(s, ns), card: formatCard(s.min, s.max), isRef, isSelfRef };
-			});
-			// Use actual text measurement for node width
-			let maxPropW = 0, maxTypeW = 0;
-			for (const s of stmts) {
-				maxPropW = Math.max(maxPropW, safeTextWidth(s.prop, 10, '600'));
-				const prefix = s.isSelfRef ? '\u21BA ' : (s.isRef ? '\u2192 ' : '');
-				maxTypeW = Math.max(maxTypeW, safeTextWidth(prefix + s.tl, 9, 'normal'));
-			}
-			const contentW = NODE_PAD_H + maxPropW + 20 + maxTypeW + CARD_COL_W + NODE_PAD_H;
-			const headerLabelW = safeTextWidth(desc.label || desc.name, 12, 'bold') + 40;
-			const w = Math.max(BASE_W, contentW, headerLabelW);
-			const h = HEADER_H + Math.max(stmts.length, 1) * ROW_H + 6;
-			const nid = `n${i}`;
-			children.push({ id: nid, width: w, height: h });
-			nodeMeta.set(nid, { desc, headerColor: pal.headers[i % pal.headers.length], stmts });
-
-			for (const s of desc.statements) {
-				for (const ref of s.shapeRefs ?? []) {
-					if (ref === desc.name) continue;
-					if (!descNames.has(ref)) continue;
-					const ti = descriptions.findIndex((d) => d.name === ref);
-					if (ti >= 0) {
-						const eid = `e${ei++}`;
-						edges.push({ id: eid, sources: [nid], targets: [`n${ti}`] });
-						edgeMeta.set(eid, { prop: compactIRI(s.propertyId, ns) || s.id, card: formatCard(s.min, s.max) });
-					}
-				}
-			}
-		}
-
-		const graph = {
-			id: 'root',
-			layoutOptions: {
-				'elk.algorithm': 'layered',
-				'elk.direction': 'RIGHT',
-				'elk.spacing.nodeNode': '50',
-				'elk.layered.spacing.nodeNodeBetweenLayers': '100',
-				'elk.spacing.edgeNode': '30',
-				'elk.spacing.edgeEdge': '25',
-				'elk.layered.spacing.edgeNodeBetweenLayers': '40',
-				'elk.edgeRouting': 'SPLINES',
-				'elk.layered.mergeEdges': 'false',
-			},
-			children,
-			edges,
-		};
-		const result = await elk.layout(graph);
-
-		const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-		let maxX = 400, maxY = 200;
-		const lines: string[] = [];
-
-		// Defs block with arrowhead markers and self-ref marker
-		lines.push(`<defs>`);
-		lines.push(`<marker id="ah" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="${pal.edgeColor}"/></marker>`);
-		lines.push(`<marker id="ah-sr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="${pal.selfRefText}"/></marker>`);
-		lines.push(`</defs>`);
-
-		for (const child of result.children || []) {
-			const meta = nodeMeta.get(child.id);
-			if (!meta) continue;
-			const x = child.x ?? 0, y = child.y ?? 0, w = child.width ?? BASE_W, h = child.height ?? 100;
-			maxX = Math.max(maxX, x + w);
-			maxY = Math.max(maxY, y + h);
-			const { desc, headerColor, stmts } = meta;
-			const label = desc.label || desc.name;
-			const tc = desc.targetClass ? compactIRI(desc.targetClass, ns) : '';
-
-			// Outer border with full rounding
-			lines.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6" fill="${pal.bodyBg}" stroke="${pal.border}" stroke-width="1.5"/>`);
-			// Header background (top corners rounded)
-			lines.push(`<rect x="${x + 0.75}" y="${y + 0.75}" width="${w - 1.5}" height="${HEADER_H}" rx="5" fill="${headerColor}"/>`);
-			// Fill gap below header rounded corners
-			lines.push(`<rect x="${x + 0.75}" y="${y + HEADER_H - 6}" width="${w - 1.5}" height="6.75" fill="${headerColor}"/>`);
-			// Separator line between header and body
-			lines.push(`<line x1="${x}" y1="${y + HEADER_H}" x2="${x + w}" y2="${y + HEADER_H}" stroke="${pal.border}" stroke-width="0.75" opacity="0.5"/>`);
-			// Header text
-			lines.push(`<text x="${x + w / 2}" y="${y + 20}" text-anchor="middle" font-size="12" font-weight="bold" fill="${pal.headerText}">${esc(label)}</text>`);
-			if (tc) lines.push(`<text x="${x + w / 2}" y="${y + 34}" text-anchor="middle" font-size="9" fill="${pal.typeText}" font-style="italic">${esc(tc)}</text>`);
-
-			if (stmts.length === 0) {
-				lines.push(`<text x="${x + NODE_PAD_H}" y="${y + HEADER_H + 18}" font-size="10" fill="#999" font-style="italic">no properties</text>`);
-			}
-			for (let si = 0; si < stmts.length; si++) {
-				const ry = y + HEADER_H + si * ROW_H;
-				const isLast = si === stmts.length - 1;
-				if (isLast) {
-					lines.push(`<rect x="${x + 1}" y="${ry}" width="${w - 2}" height="${ROW_H}" fill="${si % 2 === 1 ? pal.stripeBg : pal.bodyBg}" rx="5"/>`);
-				} else {
-					lines.push(`<rect x="${x + 1}" y="${ry}" width="${w - 2}" height="${ROW_H}" fill="${si % 2 === 1 ? pal.stripeBg : pal.bodyBg}"/>`);
-				}
-				// Property name (bold)
-				lines.push(`<text x="${x + NODE_PAD_H}" y="${ry + 17}" font-size="10" font-weight="600" fill="${pal.bodyText}">${esc(stmts[si].prop)}</text>`);
-				// Type label
-				const tColor = stmts[si].isSelfRef ? pal.selfRefText : stmts[si].isRef ? pal.refText : pal.typeText;
-				const prefix = stmts[si].isSelfRef ? '&#x21BA; ' : stmts[si].isRef ? '&#x2192; ' : '';
-				lines.push(`<text x="${x + w - CARD_COL_W - 6}" y="${ry + 17}" text-anchor="end" font-size="9" fill="${tColor}">${prefix}${esc(stmts[si].tl)}</text>`);
-				// Cardinality
-				lines.push(`<text x="${x + w - 10}" y="${ry + 17}" text-anchor="end" font-size="9" fill="${pal.cardText}">${esc(stmts[si].card)}</text>`);
-			}
-
-			// Self-reference loops
-			const selfRefStmts = stmts.filter(s => s.isSelfRef);
-			for (let sri = 0; sri < selfRefStmts.length; sri++) {
-				const stmtIdx = stmts.indexOf(selfRefStmts[sri]);
-				const yBase = y + HEADER_H + stmtIdx * ROW_H + ROW_H / 2;
-				const loopW = 40 + sri * 12;
-				const loopH = 28 + sri * 4;
-				const path = `M ${x + w} ${yBase - 4} C ${x + w + loopW * 0.6} ${yBase - loopH}, ${x + w + loopW} ${yBase - loopH * 0.5}, ${x + w + loopW} ${yBase} C ${x + w + loopW} ${yBase + loopH * 0.5}, ${x + w + loopW * 0.6} ${yBase + loopH}, ${x + w} ${yBase + 4}`;
-				lines.push(`<path d="${path}" fill="none" stroke="${pal.selfRefText}" stroke-width="1.5" marker-end="url(#ah-sr)" opacity="0.7"/>`);
-				// Self-ref label
-				const selfLabelText = `${selfRefStmts[sri].prop} [${selfRefStmts[sri].card}]`;
-				const selfLabelW = safeTextWidth(selfLabelText, 8, 'normal') + 8;
-				const labelX = x + w + loopW + 4;
-				lines.push(`<rect x="${labelX}" y="${yBase - 6}" width="${selfLabelW}" height="13" fill="${pal.edgeLabelBg}" rx="2" opacity="0.9" stroke="#e0e0e0" stroke-width="0.5"/>`);
-				lines.push(`<text x="${labelX + selfLabelW / 2}" y="${yBase + 4}" text-anchor="middle" font-size="8" fill="${pal.selfRefText}">${esc(selfLabelText)}</text>`);
-				maxX = Math.max(maxX, labelX + selfLabelW);
-			}
-		}
-
-		// Edges
-		const totalEdges = (result.edges || []).length;
-		for (let edgeIdx = 0; edgeIdx < (result.edges || []).length; edgeIdx++) {
-			const edge = result.edges![edgeIdx];
-			const sections = (edge as any).sections;
-			const meta = edgeMeta.get(edge.id);
-			if (!sections || !meta) continue;
-			for (const sec of sections) {
-				const pts = [sec.startPoint, ...(sec.bendPoints || []), sec.endPoint];
-				let d = `M ${pts[0].x} ${pts[0].y}`;
-				for (let i = 1; i < pts.length; i++) {
-					const prev = pts[i - 1], curr = pts[i];
-					const dx = (curr.x - prev.x) / 2;
-					d += ` C ${prev.x + dx} ${prev.y}, ${curr.x - dx} ${curr.y}, ${curr.x} ${curr.y}`;
-				}
-				lines.push(`<path d="${d}" fill="none" stroke="${pal.edgeColor}" stroke-width="1.5" marker-end="url(#ah)"/>`);
-				// Edge label with measured width
-				const labelText = `${meta.prop} [${meta.card}]`;
-				const lblW = safeTextWidth(labelText, 8, 'normal') + 12;
-				let lx: number, ly: number;
-				if (sec.bendPoints && sec.bendPoints.length > 0) {
-					const mid = Math.floor(sec.bendPoints.length / 2);
-					lx = sec.bendPoints[mid].x;
-					ly = sec.bendPoints[mid].y - 8;
-				} else {
-					lx = (sec.startPoint.x + sec.endPoint.x) / 2;
-					ly = (sec.startPoint.y + sec.endPoint.y) / 2 - 8;
-				}
-				// Offset labels vertically to avoid overlap
-				if (totalEdges > 1) {
-					const offset = (edgeIdx - (totalEdges - 1) / 2) * 18;
-					ly += offset;
-				}
-				lines.push(`<rect x="${lx - lblW / 2}" y="${ly - 10}" width="${lblW}" height="16" fill="${pal.edgeLabelBg}" opacity="0.9" rx="3" stroke="#e0e0e0" stroke-width="0.5"/>`);
-				lines.push(`<text x="${lx}" y="${ly + 2}" text-anchor="middle" font-size="8" fill="${pal.edgeLabelText}">${esc(labelText)}</text>`);
-				maxX = Math.max(maxX, sec.startPoint.x, sec.endPoint.x, ...(sec.bendPoints || []).map((b: any) => b.x));
-				maxY = Math.max(maxY, sec.startPoint.y, sec.endPoint.y, ...(sec.bendPoints || []).map((b: any) => b.y));
-			}
-		}
-
-		return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-PAD} ${-PAD} ${maxX + PAD * 2} ${maxY + PAD * 2}" font-family="system-ui, -apple-system, sans-serif"><rect x="${-PAD}" y="${-PAD}" width="${maxX + PAD * 2}" height="${maxY + PAD * 2}" fill="${pal.graphBg}"/>${lines.join('')}</svg>`;
-	}
 
 	/** Convert SVG string to PNG and trigger download. */
 	async function svgToPng(svgString: string, filename: string): Promise<void> {
@@ -312,12 +128,14 @@
 	];
 
 	/**
-	 * Diagram exports are flattened to three primary formats — the colour
-	 * palette is a separate toggle, cutting the original 5 buttons to 3.
+	 * Diagram exports. Style, palette, and the three display toggles
+	 * all come from the shared `diagramSettings` store — see the
+	 * settings panel above. Each button calls `generateExportSvg` with
+	 * a snapshot of the current settings.
 	 */
-	let diagramColor = $state<'color' | 'bw'>('color');
 	const diagramOptions: ExportOption[] = [
 		{ id: 'diagram-svg', label: 'SVG', ext: '.svg', category: 'Diagrams', description: 'Vector diagram (best quality, scalable).' },
+		{ id: 'diagram-pdf', label: 'PDF', ext: '.pdf', category: 'Diagrams', description: 'Vector diagram as PDF — selectable text, ideal for LaTeX figures and archival.' },
 		{ id: 'diagram-png', label: 'PNG', ext: '.png', category: 'Diagrams', description: 'Bitmap diagram for documents and slides.' },
 		{ id: 'diagram-dot', label: 'DOT', ext: '.dot', category: 'Diagrams', description: 'Graphviz source for re-rendering.' },
 	];
@@ -476,30 +294,53 @@
 					break;
 				}
 				case 'diagram-svg': {
-					const svg = await generateExportSvg(project, diagramColor);
-					const suffix = diagramColor === 'bw' ? '-diagram-bw' : '-diagram';
+					const settings = getDiagramSettings();
+					const svg = await buildExportSvg(project, settings);
+					const suffix = settings.palette === 'bw' ? '-diagram-bw' : '-diagram';
 					downloadText(svg, `${name}${suffix}.svg`, 'image/svg+xml');
 					break;
 				}
+				case 'diagram-pdf': {
+					// svgToPdfBlob lazy-loads jspdf + svg2pdf.js so the
+					// PDF code only downloads when a user clicks this
+					// option.
+					const settings = getDiagramSettings();
+					const svg = await buildExportSvg(project, settings);
+					const { svgToPdfBlob } = await import('$lib/utils/svg-to-pdf');
+					const pdfBlob = await svgToPdfBlob(svg);
+					const suffix = settings.palette === 'bw' ? '-diagram-bw' : '-diagram';
+					downloadBlob(pdfBlob, `${name}${suffix}.pdf`);
+					break;
+				}
 				case 'diagram-png': {
-					const svgForPng = await generateExportSvg(project, diagramColor);
-					const suffix = diagramColor === 'bw' ? '-diagram-bw' : '-diagram';
+					const settings = getDiagramSettings();
+					const svgForPng = await buildExportSvg(project, settings);
+					const suffix = settings.palette === 'bw' ? '-diagram-bw' : '-diagram';
 					await svgToPng(svgForPng, `${name}${suffix}.png`);
 					break;
 				}
 				case 'diagram-dot': {
-					const dot = buildDiagram(project, diagramColor);
+					const dot = buildDiagram(project, $diagramSettings.palette);
 					downloadText(dot, `${name}.dot`, 'text/vnd.graphviz');
 					break;
 				}
 				case 'report-html': {
-					const reportSvg = await generateExportSvg(project, 'color');
+					// The HTML report's embedded diagram tracks the user's
+					// current diagram settings — same "what you see is what
+					// you export" model as the individual diagram formats.
+					const reportSvg = await buildExportSvg(project, getDiagramSettings());
 					const html = generateHtmlReport(project, reportSvg);
 					downloadText(html, `${name}-report.html`, 'text/html');
 					break;
 				}
 				case 'package-zip': {
-					const pkgSvg = await generateExportSvg(project, 'color');
+					// The ZIP package is archive-grade: always uses hardcoded
+					// defaults (detail + colour + all display toggles on) so
+					// the bundle is predictable regardless of the user's
+					// current UI state. If they want a custom-styled diagram
+					// alongside, they can export it separately and add it
+					// to the archive themselves.
+					const pkgSvg = await buildExportSvg(project, DEFAULT_DIAGRAM_SETTINGS);
 					const zipData = await generatePackageZip(project, pkgSvg);
 					const zipBlob = new Blob([new Uint8Array(zipData) as BlobPart], { type: 'application/zip' });
 					downloadBlob(zipBlob, `${name}-package.zip`);
@@ -640,19 +481,105 @@
 				</TabsContent>
 
 				<TabsContent value="diagram" class="px-5 py-4 mt-0 space-y-3">
-					<!-- Color/B&W toggle applies to all diagram formats -->
-					<div class="flex items-center justify-between rounded-md border border-border bg-muted/20 px-3 py-2">
-						<span class="text-xs font-medium text-muted-foreground">Palette</span>
-						<ToggleGroup
-							type="single"
-							value={diagramColor}
-							onValueChange={(v) => { if (v === 'color' || v === 'bw') diagramColor = v; }}
-						>
-							<ToggleGroupItem value="color" class="h-7 px-2.5 text-xs">Color</ToggleGroupItem>
-							<ToggleGroupItem value="bw" class="h-7 px-2.5 text-xs">Black &amp; White</ToggleGroupItem>
-						</ToggleGroup>
+					<!--
+						Diagram Settings mirror the in-editor panel — they're
+						backed by the shared `diagramSettings` store, so
+						changing them here also updates the live preview (and
+						vice versa). "What you see is what you export."
+					-->
+					<div class="rounded-md border border-border bg-muted/20 p-3 space-y-2.5">
+						<!-- Style + Palette on a single row to save vertical space -->
+						<div class="grid grid-cols-2 gap-3">
+							<div class="flex items-center justify-between">
+								<span class="text-xs font-medium text-muted-foreground">Style</span>
+								<ToggleGroup
+									type="single"
+									value={$diagramSettings.style}
+									onValueChange={(v) => {
+										if (v === 'detail' || v === 'overview')
+											diagramSettings.update((s) => ({ ...s, style: v }));
+									}}
+								>
+									<ToggleGroupItem value="detail" class="h-7 px-2 text-xs">Detail</ToggleGroupItem>
+									<ToggleGroupItem value="overview" class="h-7 px-2 text-xs">Overview</ToggleGroupItem>
+								</ToggleGroup>
+							</div>
+							<div class="flex items-center justify-between">
+								<span class="text-xs font-medium text-muted-foreground">Palette</span>
+								<ToggleGroup
+									type="single"
+									value={$diagramSettings.palette}
+									onValueChange={(v) => {
+										if (v === 'color' || v === 'bw')
+											diagramSettings.update((s) => ({ ...s, palette: v }));
+									}}
+								>
+									<ToggleGroupItem value="color" class="h-7 px-2 text-xs">Color</ToggleGroupItem>
+									<ToggleGroupItem value="bw" class="h-7 px-2 text-xs">B&amp;W</ToggleGroupItem>
+								</ToggleGroup>
+							</div>
+						</div>
+
+						<Separator />
+
+						<!-- Display toggles in two columns: row content on the
+							 left, edge content on the right. Cardinality lives
+							 with the row toggles since it sits inside the row.
+							 - Show labels / Show properties: at least one
+							   always on (store helpers flip the other).
+							 - Show edge labels is disabled when Show edges
+							   is off (labels have nothing to attach to). -->
+						<div class="grid grid-cols-2 gap-x-4 gap-y-1.5">
+							<label class="flex items-center justify-between cursor-pointer">
+								<span class="text-xs text-foreground">Show labels</span>
+								<input
+									type="checkbox"
+									checked={$diagramSettings.showLabel}
+									onchange={(e) => toggleShowLabel((e.currentTarget as HTMLInputElement).checked)}
+									class="h-3.5 w-3.5 rounded border-border accent-primary"
+								/>
+							</label>
+							<label class="flex items-center justify-between cursor-pointer">
+								<span class="text-xs text-foreground">Show edges</span>
+								<input
+									type="checkbox"
+									checked={$diagramSettings.showEdges}
+									onchange={(e) => diagramSettings.update((s) => ({ ...s, showEdges: (e.currentTarget as HTMLInputElement).checked }))}
+									class="h-3.5 w-3.5 rounded border-border accent-primary"
+								/>
+							</label>
+							<label class="flex items-center justify-between cursor-pointer">
+								<span class="text-xs text-foreground">Show properties</span>
+								<input
+									type="checkbox"
+									checked={$diagramSettings.showProperty}
+									onchange={(e) => toggleShowProperty((e.currentTarget as HTMLInputElement).checked)}
+									class="h-3.5 w-3.5 rounded border-border accent-primary"
+								/>
+							</label>
+							<label class="flex items-center justify-between {$edgeLabelsDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}">
+								<span class="text-xs text-foreground">Show edge labels</span>
+								<input
+									type="checkbox"
+									checked={$diagramSettings.showEdgeLabels}
+									disabled={$edgeLabelsDisabled}
+									onchange={(e) => diagramSettings.update((s) => ({ ...s, showEdgeLabels: (e.currentTarget as HTMLInputElement).checked }))}
+									class="h-3.5 w-3.5 rounded border-border accent-primary"
+								/>
+							</label>
+							<label class="flex items-center justify-between cursor-pointer">
+								<span class="text-xs text-foreground">Show cardinality</span>
+								<input
+									type="checkbox"
+									checked={$diagramSettings.showCardinality}
+									onchange={(e) => diagramSettings.update((s) => ({ ...s, showCardinality: (e.currentTarget as HTMLInputElement).checked }))}
+									class="h-3.5 w-3.5 rounded border-border accent-primary"
+								/>
+							</label>
+						</div>
 					</div>
-					<div class="grid grid-cols-1 gap-2">
+
+					<div class="grid grid-cols-2 gap-2">
 						{#each diagramOptions as opt}
 							{@render exportCard(opt)}
 						{/each}

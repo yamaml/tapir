@@ -1,6 +1,6 @@
 {
   "name": "tapir",
-  "version": "0.1.7-beta.47",
+  "version": "0.1.7-beta.64",
   "description": "Tapir — Tabular Application Profile Editor",
   "license": "MIT",
   "author": "Nishad Thalhath",
@@ -32,23 +32,29 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build:vocabs": "tsx scripts/build-vocabs.ts"
+    "build:vocabs": "tsx scripts/build-vocabs.ts",
+    "build:logo": "tsx scripts/build-logo-png.ts"
   },
   "dependencies": {
+    "@fontsource-variable/inter": "5.2.8",
+    "@fontsource-variable/jetbrains-mono": "5.2.8",
     "@zazuko/prefixes": "^2.6.1",
     "bits-ui": "^2.16.3",
     "clsx": "^2.1.1",
     "elkjs": "^0.11.1",
     "fflate": "^0.8.2",
     "idb": "^8.0.3",
+    "jspdf": "4.2.1",
     "lucide-svelte": "^0.577.0",
     "n3": "^2.0.3",
     "svelte": "^5.53.12",
+    "svg2pdf.js": "2.7.0",
     "tailwind-merge": "^3.5.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "yaml": "^2.8.2"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "2.6.2",
     "@sveltejs/adapter-static": "^3.0.10",
     "@sveltejs/kit": "^2.55.0",
     "@sveltejs/vite-plugin-svelte": "^5.1.1",

@@ -1,5 +1,55 @@
 @import 'tailwindcss';
 
+/*
+ * Bundled fonts — shipped locally so Tapir keeps its privacy
+ * contract: no requests to Google Fonts or any other third-party
+ * host at runtime. Inter for body, JetBrains Mono for code and IRIs.
+ * Both are variable fonts covering all weights in a single file.
+ *
+ * `system-ui` / monospace fallbacks keep the UI legible if the WOFF2
+ * requests are blocked (e.g. some privacy extensions) and during the
+ * brief moment before each font decodes on first paint.
+ */
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/jetbrains-mono';
+
+:root {
+	--font-sans:
+		'Inter Variable',
+		'Inter',
+		system-ui,
+		-apple-system,
+		'Segoe UI',
+		Roboto,
+		'Helvetica Neue',
+		Arial,
+		sans-serif;
+	--font-mono:
+		'JetBrains Mono Variable',
+		'JetBrains Mono',
+		'SF Mono',
+		Menlo,
+		Consolas,
+		'Liberation Mono',
+		'Courier New',
+		monospace;
+}
+
+html {
+	font-family: var(--font-sans);
+}
+
+/* Tailwind's default `font-mono` utility picks up our override via
+   --font-mono, but set it explicitly too for the case where a class
+   lookup misses (e.g. scoped component styles). */
+.font-mono,
+code,
+kbd,
+pre,
+samp {
+	font-family: var(--font-mono);
+}
+
 /* ── Light theme (default) ──────────────────────────────────────── */
 
 :root {

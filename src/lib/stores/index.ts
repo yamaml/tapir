@@ -9,3 +9,4 @@ export * from './ui-store';
 export * from './history-store';
 export * from './vocab-store';
 export * from './theme-store';
+export * from './diagram-settings-store';

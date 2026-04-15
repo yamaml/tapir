@@ -8,6 +8,7 @@
 	import ShapeItem from './shape-item.svelte';
 	import NamespacePanel from './namespace-panel.svelte';
 	import { createDragHandlers } from '$lib/utils/drag-reorder';
+	import { descriptionMatchesQuery } from '$lib/utils/search-match';
 	import Plus from 'lucide-svelte/icons/plus';
 
 	interface Props {
@@ -17,24 +18,9 @@
 
 	let { project, searchQuery = '' }: Props = $props();
 
-	/** Check if a description matches the search query. */
-	function matchesSearch(desc: TapirProject['descriptions'][number], q: string): boolean {
-		if (!q) return true;
-		const lower = q.toLowerCase();
-		if (desc.name.toLowerCase().includes(lower)) return true;
-		if (desc.label.toLowerCase().includes(lower)) return true;
-		if (desc.note.toLowerCase().includes(lower)) return true;
-		return desc.statements.some(
-			(st) =>
-				st.label.toLowerCase().includes(lower) ||
-				st.propertyId.toLowerCase().includes(lower) ||
-				st.note.toLowerCase().includes(lower)
-		);
-	}
-
 	let filteredDescriptions = $derived(
 		searchQuery
-			? project.descriptions.filter((d) => matchesSearch(d, searchQuery))
+			? project.descriptions.filter((d) => descriptionMatchesQuery(d, searchQuery))
 			: project.descriptions
 	);
 
