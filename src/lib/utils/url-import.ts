@@ -32,3 +32,47 @@ export class UrlImportError extends Error {
 
 /** Forge whose blob URL was rewritten, or `null` if no rewrite happened. */
 export type Forge = 'github' | 'gitlab' | 'bitbucket' | null;
+
+// ── Forge Rewriting ─────────────────────────────────────────────
+
+/**
+ * Rewrites known forge blob URLs to their raw equivalents so the
+ * subsequent `fetch()` returns the file body rather than the forge's
+ * HTML page wrapper. Best-effort: unrecognised hosts and malformed
+ * URLs pass through unchanged (the caller's `fetch()` will deal with
+ * them). Pure function — no I/O, safe for unit tests.
+ *
+ * @param input - The user-pasted URL string.
+ * @returns The (possibly rewritten) URL plus the recognised forge.
+ *
+ * @example
+ * rewriteForgeBlobUrl('https://github.com/foo/bar/blob/main/x.yaml')
+ * // → { rewritten: 'https://raw.githubusercontent.com/foo/bar/main/x.yaml',
+ * //     forge: 'github' }
+ */
+export function rewriteForgeBlobUrl(input: string): {
+	rewritten: string;
+	forge: Forge;
+} {
+	let url: URL;
+	try {
+		url = new URL(input);
+	} catch {
+		return { rewritten: input, forge: null };
+	}
+
+	// GitHub: github.com/{owner}/{repo}/blob/{ref}/{path…}
+	//      → raw.githubusercontent.com/{owner}/{repo}/{ref}/{path…}
+	if (url.hostname === 'github.com') {
+		const m = url.pathname.match(/^\/([^/]+)\/([^/]+)\/blob\/(.+)$/);
+		if (m) {
+			const [, owner, repo, refAndPath] = m;
+			return {
+				rewritten: `https://raw.githubusercontent.com/${owner}/${repo}/${refAndPath}`,
+				forge: 'github',
+			};
+		}
+	}
+
+	return { rewritten: input, forge: null };
+}
