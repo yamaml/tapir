@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest';
-import { UrlImportError, rewriteForgeBlobUrl } from '$lib/utils/url-import';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+	UrlImportError,
+	rewriteForgeBlobUrl,
+	loadProfileFromUrl,
+} from '$lib/utils/url-import';
 
 // ── Tests ───────────────────────────────────────────────────────
 
@@ -94,5 +98,70 @@ describe('rewriteForgeBlobUrl — unrelated host', () => {
 		const url = 'https://example.org/profiles/x.yaml';
 		const result = rewriteForgeBlobUrl(url);
 		expect(result).toEqual({ rewritten: url, forge: null });
+	});
+});
+
+describe('loadProfileFromUrl — validation', () => {
+	it('throws invalid-url for a malformed URL', async () => {
+		await expect(loadProfileFromUrl('not a url')).rejects.toMatchObject({
+			kind: 'invalid-url',
+		});
+	});
+
+	it('throws unsupported-scheme for a file:// URL', async () => {
+		await expect(
+			loadProfileFromUrl('file:///etc/passwd'),
+		).rejects.toMatchObject({ kind: 'unsupported-scheme' });
+	});
+
+	it('throws unsupported-scheme for a ftp:// URL', async () => {
+		await expect(
+			loadProfileFromUrl('ftp://example.org/x.yaml'),
+		).rejects.toMatchObject({ kind: 'unsupported-scheme' });
+	});
+});
+
+describe('loadProfileFromUrl — filename derivation', () => {
+	beforeEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('uses the last path segment as filename', async () => {
+		vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+			new Response('key: value\n', {
+				status: 200,
+				headers: { 'Content-Type': 'text/yaml' },
+			}),
+		);
+		const file = await loadProfileFromUrl(
+			'https://example.org/profiles/sample.yaml',
+		);
+		expect(file.name).toBe('sample.yaml');
+	});
+
+	it('falls back to "imported-profile" for a root URL', async () => {
+		vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+			new Response('key: value\n', { status: 200 }),
+		);
+		const file = await loadProfileFromUrl('https://example.org/');
+		expect(file.name).toBe('imported-profile');
+	});
+
+	it('falls back to "imported-profile" for a URL with no path', async () => {
+		vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+			new Response('key: value\n', { status: 200 }),
+		);
+		const file = await loadProfileFromUrl('https://example.org');
+		expect(file.name).toBe('imported-profile');
+	});
+
+	it('keeps a path segment with no extension as-is', async () => {
+		vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+			new Response('key: value\n', { status: 200 }),
+		);
+		const file = await loadProfileFromUrl(
+			'https://example.org/api/profile',
+		);
+		expect(file.name).toBe('profile');
 	});
 });

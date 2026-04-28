@@ -103,3 +103,87 @@ export function rewriteForgeBlobUrl(input: string): {
 
 	return { rewritten: input, forge: null };
 }
+
+// ── Loading ─────────────────────────────────────────────────────
+
+/**
+ * Fetches a profile URL and returns it as a `File` ready for the
+ * existing `importFile()` pipeline. Validates the input URL, rewrites
+ * known forge blob URLs, and surfaces failures as `UrlImportError`
+ * with a discriminated `kind` so the caller can render specific
+ * messages.
+ *
+ * Uses `mode: 'cors'` and no custom headers — non-simple headers
+ * trigger CORS preflight, which most arbitrary hosts don't allow.
+ *
+ * @param input - The user-pasted URL string.
+ * @returns A `File` whose name is derived from the URL path.
+ * @throws {UrlImportError}
+ *
+ * @example
+ * const file = await loadProfileFromUrl(
+ *   'https://github.com/foo/bar/blob/main/x.yaml',
+ * );
+ * // file.name === 'x.yaml'
+ */
+export async function loadProfileFromUrl(input: string): Promise<File> {
+	let url: URL;
+	try {
+		url = new URL(input);
+	} catch {
+		throw new UrlImportError('invalid-url', `Invalid URL: ${input}`);
+	}
+
+	if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+		throw new UrlImportError(
+			'unsupported-scheme',
+			`Only http and https URLs are supported (got ${url.protocol}).`,
+		);
+	}
+
+	const { rewritten } = rewriteForgeBlobUrl(input);
+
+	let response: Response;
+	try {
+		response = await fetch(rewritten, {
+			mode: 'cors',
+			redirect: 'follow',
+			cache: 'default',
+			referrerPolicy: 'no-referrer',
+		});
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		throw new UrlImportError(
+			'cors-or-network',
+			`Network or CORS failure: ${message}`,
+		);
+	}
+
+	if (!response.ok) {
+		throw new UrlImportError(
+			'http-error',
+			`${response.status} ${response.statusText}`,
+		);
+	}
+
+	const blob = await response.blob();
+	if (blob.size === 0) {
+		throw new UrlImportError(
+			'empty-response',
+			'The URL returned an empty response.',
+		);
+	}
+
+	const filename = deriveFilename(url);
+	return new File([blob], filename, { type: blob.type });
+}
+
+/**
+ * Derives a filename from a URL by taking the last non-empty path
+ * segment. Returns `imported-profile` if no segment is available.
+ */
+function deriveFilename(url: URL): string {
+	const segments = url.pathname.split('/').filter((s) => s.length > 0);
+	const last = segments[segments.length - 1];
+	return last && last.length > 0 ? last : 'imported-profile';
+}
