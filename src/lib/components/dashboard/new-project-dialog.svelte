@@ -156,16 +156,12 @@
 	}
 
 	/**
-	 * Handles file selection from the import input. Parses the file
-	 * immediately so we can show the detected flavor / namespaces /
-	 * base URI in the dialog, and report any parse issues up-front
-	 * rather than after the user clicks Create.
+	 * Processes an imported `File` regardless of whether it came from
+	 * the file picker or a URL load. Parses immediately so the dialog
+	 * can show the detected flavor, namespaces, and base IRI before
+	 * the user clicks Create, and so any parse issues surface up-front.
 	 */
-	async function handleFileSelect(e: Event) {
-		const input = e.target as HTMLInputElement;
-		const file = input.files?.[0];
-		if (!file) return;
-
+	async function processImportedFile(file: File): Promise<void> {
 		importedFile = file;
 		importedProject = null;
 		importWarnings = [];
@@ -174,8 +170,6 @@
 
 		try {
 			const result = await importFile(file);
-			// We treat unknown-format XLSX the same as any other non-fatal result:
-			// surface warnings to the user, let them proceed if they want to.
 			importedProject = result.project;
 			importWarnings = result.warnings;
 			importErrors = result.errors;
@@ -186,12 +180,17 @@
 				projectName = file.name.replace(/\.[^.]+$/, '');
 			}
 
-			// Carry over detected flavor, base, and namespaces so the
-			// user sees the same configuration they'd get after import.
+			// Carry over detected flavor, base, and namespaces.
 			if (result.project.flavor) selectedFlavor = result.project.flavor;
 			if (result.project.base) baseIri = result.project.base;
-			if (result.project.namespaces && Object.keys(result.project.namespaces).length > 0) {
-				projectNamespaces = { ...projectNamespaces, ...result.project.namespaces };
+			if (
+				result.project.namespaces &&
+				Object.keys(result.project.namespaces).length > 0
+			) {
+				projectNamespaces = {
+					...projectNamespaces,
+					...result.project.namespaces,
+				};
 			}
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
@@ -199,6 +198,16 @@
 		} finally {
 			importing = false;
 		}
+	}
+
+	/**
+	 * Handles file selection from the import input.
+	 */
+	async function handleFileSelect(e: Event): Promise<void> {
+		const input = e.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		await processImportedFile(file);
 	}
 
 	function handleQuickAdd(prefix: string, uri: string) {
