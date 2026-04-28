@@ -465,183 +465,6 @@
 				{/if}
 			</div>
 
-			<!-- Flavor selection -->
-			<div class="grid gap-2">
-				<Label>Profile flavor</Label>
-				<div class="grid grid-cols-2 gap-3">
-					<button
-						type="button"
-						class="rounded-lg border-2 p-3 text-left transition-colors {selectedFlavor === 'simpledsp'
-							? 'border-blue-500 bg-blue-500/10'
-							: 'border-border hover:border-muted-foreground/30'}"
-						onclick={() => (selectedFlavor = 'simpledsp')}
-					>
-						<div class="flex items-center gap-2">
-							<div class="h-2.5 w-2.5 rounded-full bg-blue-500"></div>
-							<span class="text-sm font-medium text-foreground">SimpleDSP</span>
-						</div>
-						<p class="mt-1.5 text-xs text-muted-foreground leading-relaxed">
-							Streamlined format for description and statement templates.
-						</p>
-					</button>
-					<button
-						type="button"
-						class="rounded-lg border-2 p-3 text-left transition-colors {selectedFlavor === 'dctap'
-							? 'border-green-500 bg-green-500/10'
-							: 'border-border hover:border-muted-foreground/30'}"
-						onclick={() => (selectedFlavor = 'dctap')}
-					>
-						<div class="flex items-center gap-2">
-							<div class="h-2.5 w-2.5 rounded-full bg-green-500"></div>
-							<span class="text-sm font-medium text-foreground">DCTAP</span>
-						</div>
-						<p class="mt-1.5 text-xs text-muted-foreground leading-relaxed">
-							DC Tabular Application Profiles with shapes and statements.
-						</p>
-					</button>
-				</div>
-				<p class="text-xs text-muted-foreground">Not sure? Start with SimpleDSP.</p>
-			</div>
-
-			<Separator />
-
-			<!-- Namespaces (required) -->
-			<div class="grid gap-2">
-				<Label>
-					<Globe class="inline h-3.5 w-3.5 mr-1 [&]:pointer-events-none" />
-					Namespaces
-				</Label>
-				<p class="text-xs text-muted-foreground -mt-1">
-					Click to quick-add common vocabularies, or add them later from the editor.
-				</p>
-
-				<!-- Quick-add buttons -->
-				{#if availableCommon.length > 0}
-					<div class="flex flex-wrap gap-1.5">
-						{#each availableCommon as c}
-							<button
-								type="button"
-								class="text-xs px-2 py-1 rounded-md border border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors [&_svg]:pointer-events-none"
-								onclick={() => handleQuickAdd(c.prefix, c.uri)}
-								title={c.uri}
-							>
-								<Plus class="inline h-3 w-3 mr-0.5" />{c.prefix}
-							</button>
-						{/each}
-					</div>
-				{/if}
-
-				<!-- Added namespaces -->
-				{#if namespaceCount > 0}
-					<div class="space-y-1 rounded-md border border-border p-2 bg-card">
-						{#each Object.entries(projectNamespaces) as [prefix, uri]}
-							<div class="flex items-center gap-2 text-xs group">
-								<Badge variant="secondary" class="font-mono text-[10px] shrink-0">{prefix}:</Badge>
-								<span class="text-muted-foreground font-mono truncate flex-1" title={uri}>{uri}</span>
-								<button
-									type="button"
-									class="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity [&_svg]:pointer-events-none"
-									onclick={() => handleRemoveNs(prefix)}
-								>
-									<X class="h-3 w-3" />
-								</button>
-							</div>
-						{/each}
-					</div>
-				{/if}
-
-				<!-- Custom namespace input -->
-				<div class="flex gap-2">
-					<div class="relative w-24">
-						<input
-							bind:this={prefixInputEl}
-							type="text"
-							bind:value={newPrefix}
-							oninput={handlePrefixInput}
-							onkeydown={handlePrefixKeydown}
-							onfocus={handlePrefixFocus}
-							onblur={handlePrefixBlur}
-							placeholder="prefix"
-							autocomplete="off"
-							role="combobox"
-							aria-expanded={showPrefixSuggestions}
-							aria-autocomplete="list"
-							class="w-full h-8 px-2 text-xs font-mono bg-background border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-ring"
-						/>
-						{#if showPrefixSuggestions}
-							<!-- Suggestion popover. Positioned beneath the
-								 prefix input, closes on blur (with a short
-								 delay so clicks on items still register).
-								 Items preview the matched URI so users see
-								 which vocabulary they're picking. -->
-							<ul
-								role="listbox"
-								class="absolute left-0 top-full z-50 mt-1 max-h-60 w-[28rem] overflow-y-auto rounded-md border border-border bg-popover shadow-md py-1 text-xs"
-							>
-								{#each prefixSuggestions as s, i (s.prefix)}
-									<!-- svelte-ignore a11y_click_events_have_key_events -->
-									<li
-										role="option"
-										aria-selected={i === prefixHighlight}
-										onmousedown={(e) => {
-											// Prevent the input's blur from firing before
-											// our click handler, which would hide the
-											// popover and cancel the selection.
-											e.preventDefault();
-											acceptPrefixSuggestion(s);
-										}}
-										onmouseenter={() => (prefixHighlight = i)}
-										class="flex items-baseline gap-2 px-2 py-1 cursor-pointer {i === prefixHighlight ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'}"
-									>
-										<span class="font-mono font-semibold shrink-0">{s.prefix}</span>
-										{#if s.label}
-											<span class="text-[10px] text-muted-foreground shrink-0">{s.label}</span>
-										{/if}
-										<span class="font-mono text-muted-foreground truncate" title={s.uri}>{s.uri}</span>
-									</li>
-								{/each}
-							</ul>
-						{/if}
-					</div>
-					<input
-						type="text"
-						bind:value={newUri}
-						onkeydown={handleNsKeydown}
-						placeholder="http://example.org/ns#"
-						class="flex-1 h-8 px-2 text-xs font-mono bg-background border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-ring"
-					/>
-					<Button
-						size="sm"
-						variant="outline"
-						class="h-8 text-xs"
-						disabled={!newPrefix.trim() || !newUri.trim()}
-						onclick={handleAddCustomNs}
-					>
-						Add
-					</Button>
-				</div>
-
-				<!--
-					Base IRI is a SimpleDSP / YAMA concept (sets `@base` for
-					record URIs and shape IRIs). DCTAP has no equivalent —
-					shapes are referenced by `shapeID` only — so we hide
-					this input for DCTAP profiles.
-				-->
-				{#if selectedFlavor !== 'dctap'}
-					<div class="mt-1">
-						<Label for="base-iri" class="text-muted-foreground text-xs">Base IRI (optional)</Label>
-						<input
-							id="base-iri"
-							type="text"
-							bind:value={baseIri}
-							onkeydown={handleKeydown}
-							placeholder="http://example.org/profiles/"
-							class="w-full h-8 px-2 text-xs font-mono bg-background border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-ring mt-1"
-						/>
-					</div>
-				{/if}
-			</div>
-
 			<!-- Import (optional) -->
 			<div class="grid gap-2">
 				<Label class="text-muted-foreground">Import existing profile (optional)</Label>
@@ -841,6 +664,183 @@
 								</div>
 							</div>
 						</div>
+					</div>
+				{/if}
+			</div>
+
+			<!-- Flavor selection -->
+			<div class="grid gap-2">
+				<Label>Profile flavor</Label>
+				<div class="grid grid-cols-2 gap-3">
+					<button
+						type="button"
+						class="rounded-lg border-2 p-3 text-left transition-colors {selectedFlavor === 'simpledsp'
+							? 'border-blue-500 bg-blue-500/10'
+							: 'border-border hover:border-muted-foreground/30'}"
+						onclick={() => (selectedFlavor = 'simpledsp')}
+					>
+						<div class="flex items-center gap-2">
+							<div class="h-2.5 w-2.5 rounded-full bg-blue-500"></div>
+							<span class="text-sm font-medium text-foreground">SimpleDSP</span>
+						</div>
+						<p class="mt-1.5 text-xs text-muted-foreground leading-relaxed">
+							Streamlined format for description and statement templates.
+						</p>
+					</button>
+					<button
+						type="button"
+						class="rounded-lg border-2 p-3 text-left transition-colors {selectedFlavor === 'dctap'
+							? 'border-green-500 bg-green-500/10'
+							: 'border-border hover:border-muted-foreground/30'}"
+						onclick={() => (selectedFlavor = 'dctap')}
+					>
+						<div class="flex items-center gap-2">
+							<div class="h-2.5 w-2.5 rounded-full bg-green-500"></div>
+							<span class="text-sm font-medium text-foreground">DCTAP</span>
+						</div>
+						<p class="mt-1.5 text-xs text-muted-foreground leading-relaxed">
+							DC Tabular Application Profiles with shapes and statements.
+						</p>
+					</button>
+				</div>
+				<p class="text-xs text-muted-foreground">Not sure? Start with SimpleDSP.</p>
+			</div>
+
+			<Separator />
+
+			<!-- Namespaces (required) -->
+			<div class="grid gap-2">
+				<Label>
+					<Globe class="inline h-3.5 w-3.5 mr-1 [&]:pointer-events-none" />
+					Namespaces
+				</Label>
+				<p class="text-xs text-muted-foreground -mt-1">
+					Click to quick-add common vocabularies, or add them later from the editor.
+				</p>
+
+				<!-- Quick-add buttons -->
+				{#if availableCommon.length > 0}
+					<div class="flex flex-wrap gap-1.5">
+						{#each availableCommon as c}
+							<button
+								type="button"
+								class="text-xs px-2 py-1 rounded-md border border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors [&_svg]:pointer-events-none"
+								onclick={() => handleQuickAdd(c.prefix, c.uri)}
+								title={c.uri}
+							>
+								<Plus class="inline h-3 w-3 mr-0.5" />{c.prefix}
+							</button>
+						{/each}
+					</div>
+				{/if}
+
+				<!-- Added namespaces -->
+				{#if namespaceCount > 0}
+					<div class="space-y-1 rounded-md border border-border p-2 bg-card">
+						{#each Object.entries(projectNamespaces) as [prefix, uri]}
+							<div class="flex items-center gap-2 text-xs group">
+								<Badge variant="secondary" class="font-mono text-[10px] shrink-0">{prefix}:</Badge>
+								<span class="text-muted-foreground font-mono truncate flex-1" title={uri}>{uri}</span>
+								<button
+									type="button"
+									class="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity [&_svg]:pointer-events-none"
+									onclick={() => handleRemoveNs(prefix)}
+								>
+									<X class="h-3 w-3" />
+								</button>
+							</div>
+						{/each}
+					</div>
+				{/if}
+
+				<!-- Custom namespace input -->
+				<div class="flex gap-2">
+					<div class="relative w-24">
+						<input
+							bind:this={prefixInputEl}
+							type="text"
+							bind:value={newPrefix}
+							oninput={handlePrefixInput}
+							onkeydown={handlePrefixKeydown}
+							onfocus={handlePrefixFocus}
+							onblur={handlePrefixBlur}
+							placeholder="prefix"
+							autocomplete="off"
+							role="combobox"
+							aria-expanded={showPrefixSuggestions}
+							aria-autocomplete="list"
+							class="w-full h-8 px-2 text-xs font-mono bg-background border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-ring"
+						/>
+						{#if showPrefixSuggestions}
+							<!-- Suggestion popover. Positioned beneath the
+								 prefix input, closes on blur (with a short
+								 delay so clicks on items still register).
+								 Items preview the matched URI so users see
+								 which vocabulary they're picking. -->
+							<ul
+								role="listbox"
+								class="absolute left-0 top-full z-50 mt-1 max-h-60 w-[28rem] overflow-y-auto rounded-md border border-border bg-popover shadow-md py-1 text-xs"
+							>
+								{#each prefixSuggestions as s, i (s.prefix)}
+									<!-- svelte-ignore a11y_click_events_have_key_events -->
+									<li
+										role="option"
+										aria-selected={i === prefixHighlight}
+										onmousedown={(e) => {
+											// Prevent the input's blur from firing before
+											// our click handler, which would hide the
+											// popover and cancel the selection.
+											e.preventDefault();
+											acceptPrefixSuggestion(s);
+										}}
+										onmouseenter={() => (prefixHighlight = i)}
+										class="flex items-baseline gap-2 px-2 py-1 cursor-pointer {i === prefixHighlight ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'}"
+									>
+										<span class="font-mono font-semibold shrink-0">{s.prefix}</span>
+										{#if s.label}
+											<span class="text-[10px] text-muted-foreground shrink-0">{s.label}</span>
+										{/if}
+										<span class="font-mono text-muted-foreground truncate" title={s.uri}>{s.uri}</span>
+									</li>
+								{/each}
+							</ul>
+						{/if}
+					</div>
+					<input
+						type="text"
+						bind:value={newUri}
+						onkeydown={handleNsKeydown}
+						placeholder="http://example.org/ns#"
+						class="flex-1 h-8 px-2 text-xs font-mono bg-background border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-ring"
+					/>
+					<Button
+						size="sm"
+						variant="outline"
+						class="h-8 text-xs"
+						disabled={!newPrefix.trim() || !newUri.trim()}
+						onclick={handleAddCustomNs}
+					>
+						Add
+					</Button>
+				</div>
+
+				<!--
+					Base IRI is a SimpleDSP / YAMA concept (sets `@base` for
+					record URIs and shape IRIs). DCTAP has no equivalent —
+					shapes are referenced by `shapeID` only — so we hide
+					this input for DCTAP profiles.
+				-->
+				{#if selectedFlavor !== 'dctap'}
+					<div class="mt-1">
+						<Label for="base-iri" class="text-muted-foreground text-xs">Base IRI (optional)</Label>
+						<input
+							id="base-iri"
+							type="text"
+							bind:value={baseIri}
+							onkeydown={handleKeydown}
+							placeholder="http://example.org/profiles/"
+							class="w-full h-8 px-2 text-xs font-mono bg-background border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-ring mt-1"
+						/>
 					</div>
 				{/if}
 			</div>
