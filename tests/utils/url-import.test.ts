@@ -165,3 +165,51 @@ describe('loadProfileFromUrl — filename derivation', () => {
 		expect(file.name).toBe('profile');
 	});
 });
+
+describe('loadProfileFromUrl — fetch errors', () => {
+	beforeEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('maps a rejected fetch to cors-or-network', async () => {
+		vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(
+			new TypeError('Failed to fetch'),
+		);
+		await expect(
+			loadProfileFromUrl('https://example.org/x.yaml'),
+		).rejects.toMatchObject({ kind: 'cors-or-network' });
+	});
+
+	it('maps a 404 response to http-error', async () => {
+		vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+			new Response('not found', {
+				status: 404,
+				statusText: 'Not Found',
+			}),
+		);
+		await expect(
+			loadProfileFromUrl('https://example.org/x.yaml'),
+		).rejects.toMatchObject({ kind: 'http-error' });
+	});
+
+	it('maps an empty body to empty-response', async () => {
+		vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+			new Response('', { status: 200 }),
+		);
+		await expect(
+			loadProfileFromUrl('https://example.org/x.yaml'),
+		).rejects.toMatchObject({ kind: 'empty-response' });
+	});
+
+	it('returns a File with the response body on success', async () => {
+		vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+			new Response('hello\n', { status: 200 }),
+		);
+		const file = await loadProfileFromUrl(
+			'https://example.org/x.yaml',
+		);
+		expect(file).toBeInstanceOf(File);
+		const text = await file.text();
+		expect(text).toBe('hello\n');
+	});
+});

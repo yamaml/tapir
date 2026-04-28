@@ -166,8 +166,15 @@ export async function loadProfileFromUrl(input: string): Promise<File> {
 		);
 	}
 
-	const blob = await response.blob();
-	if (blob.size === 0) {
+	// Read as ArrayBuffer rather than wrapping a Blob inside the File.
+	// `new File([blob], …)` is valid in real browsers but jsdom (used by
+	// our tests) serialises the inner Blob as `[object Blob]` when text
+	// is read back, so unit tests can't verify content. ArrayBuffer
+	// works in both environments and the resulting File reads correctly
+	// via FileReader (used by the existing import pipeline) and via
+	// `text()` / `arrayBuffer()`.
+	const buffer = await response.arrayBuffer();
+	if (buffer.byteLength === 0) {
 		throw new UrlImportError(
 			'empty-response',
 			'The URL returned an empty response.',
@@ -175,7 +182,8 @@ export async function loadProfileFromUrl(input: string): Promise<File> {
 	}
 
 	const filename = deriveFilename(url);
-	return new File([blob], filename, { type: blob.type });
+	const contentType = response.headers.get('Content-Type') ?? '';
+	return new File([buffer], filename, { type: contentType });
 }
 
 /**
