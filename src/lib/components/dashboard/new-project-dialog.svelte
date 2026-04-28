@@ -10,6 +10,12 @@
 	import zazukoPrefixes from '@zazuko/prefixes';
 	import { importFile } from '$lib/components/editor/import-handler';
 	import {
+		loadProfileFromUrl,
+		rewriteForgeBlobUrl,
+		UrlImportError,
+		type UrlImportErrorKind,
+	} from '$lib/utils/url-import';
+	import {
 		Dialog,
 		DialogContent,
 		DialogHeader,
@@ -27,6 +33,7 @@
 	import Plus from 'lucide-svelte/icons/plus';
 	import X from 'lucide-svelte/icons/x';
 	import Globe from 'lucide-svelte/icons/globe';
+	import Link from 'lucide-svelte/icons/link';
 	import Loader from 'lucide-svelte/icons/loader-circle';
 	import AlertTriangle from 'lucide-svelte/icons/triangle-alert';
 
@@ -62,6 +69,20 @@
 	let importErrors = $state<ParseMessage[]>([]);
 	let importing = $state(false);
 	let fileInputEl = $state<HTMLInputElement | null>(null);
+
+	// ── URL import state ────────────────────────────────────────
+	let activeImportTab = $state<'file' | 'url'>('file');
+	let urlInput = $state('');
+	let urlLoading = $state(false);
+	let urlError = $state<string | null>(null);
+	let urlForgeRewriteHint = $state<string | null>(null);
+
+	/**
+	 * Increments on every load (file or URL) so a late-arriving
+	 * response from a previous load can be discarded if the user has
+	 * since started a new one. Plain mutable counter — not reactive.
+	 */
+	let importToken = 0;
 
 	// ── Common prefixes for quick add ───────────────────────────
 
@@ -151,21 +172,21 @@
 		importWarnings = [];
 		importErrors = [];
 		importing = false;
+		urlInput = '';
+		urlError = null;
+		urlForgeRewriteHint = null;
 		// Also clear the <input type="file"> so the same filename can be re-picked.
 		if (fileInputEl) fileInputEl.value = '';
 	}
 
 	/**
-	 * Handles file selection from the import input. Parses the file
-	 * immediately so we can show the detected flavor / namespaces /
-	 * base URI in the dialog, and report any parse issues up-front
-	 * rather than after the user clicks Create.
+	 * Processes an imported `File` regardless of whether it came from
+	 * the file picker or a URL load. Parses immediately so the dialog
+	 * can show the detected flavor, namespaces, and base IRI before
+	 * the user clicks Create, and so any parse issues surface up-front.
 	 */
-	async function handleFileSelect(e: Event) {
-		const input = e.target as HTMLInputElement;
-		const file = input.files?.[0];
-		if (!file) return;
-
+	async function processImportedFile(file: File): Promise<void> {
+		const token = ++importToken;
 		importedFile = file;
 		importedProject = null;
 		importWarnings = [];
@@ -174,31 +195,101 @@
 
 		try {
 			const result = await importFile(file);
-			// We treat unknown-format XLSX the same as any other non-fatal result:
-			// surface warnings to the user, let them proceed if they want to.
+			if (token !== importToken) return; // a newer load superseded us
+
 			importedProject = result.project;
 			importWarnings = result.warnings;
 			importErrors = result.errors;
 
-			// Default the project name to the filename (without extension)
-			// if the user hasn't typed one yet.
 			if (!projectName.trim()) {
 				projectName = file.name.replace(/\.[^.]+$/, '');
 			}
-
-			// Carry over detected flavor, base, and namespaces so the
-			// user sees the same configuration they'd get after import.
 			if (result.project.flavor) selectedFlavor = result.project.flavor;
 			if (result.project.base) baseIri = result.project.base;
-			if (result.project.namespaces && Object.keys(result.project.namespaces).length > 0) {
-				projectNamespaces = { ...projectNamespaces, ...result.project.namespaces };
+			if (
+				result.project.namespaces &&
+				Object.keys(result.project.namespaces).length > 0
+			) {
+				projectNamespaces = {
+					...projectNamespaces,
+					...result.project.namespaces,
+				};
 			}
 		} catch (err) {
+			if (token !== importToken) return;
 			const message = err instanceof Error ? err.message : String(err);
 			importErrors = [{ message: `Failed to read file: ${message}` }];
 		} finally {
-			importing = false;
+			if (token === importToken) importing = false;
 		}
+	}
+
+	const URL_ERROR_MESSAGES: Record<UrlImportErrorKind, string> = {
+		'invalid-url': "That doesn't look like a valid URL.",
+		'unsupported-scheme': 'Only http and https URLs are supported.',
+		'cors-or-network':
+			"Couldn't load this URL. The server may not allow cross-origin access. Try downloading the file and using the File tab instead.",
+		'http-error':
+			'The server returned an error. Check the URL and try again.',
+		'empty-response': 'The URL loaded but returned an empty file.',
+	};
+
+	async function handleUrlLoad(): Promise<void> {
+		const trimmed = urlInput.trim();
+		if (!trimmed) return;
+
+		urlLoading = true;
+		urlError = null;
+		urlForgeRewriteHint = null;
+
+		try {
+			// Compute the rewrite hint up-front for the success path.
+			const { rewritten, forge } = rewriteForgeBlobUrl(trimmed);
+			if (forge) {
+				try {
+					const fromHost = new URL(trimmed).host;
+					const toHost = new URL(rewritten).host;
+					if (fromHost !== toHost) {
+						urlForgeRewriteHint = `Loaded from ${toHost} (rewritten from ${fromHost})`;
+					}
+				} catch {
+					// Hint is informational; ignore parse issues here.
+				}
+			}
+
+			const file = await loadProfileFromUrl(trimmed);
+			await processImportedFile(file);
+		} catch (err) {
+			if (err instanceof UrlImportError) {
+				urlError =
+					err.kind === 'http-error'
+						? `The server returned ${err.message}. Check the URL and try again.`
+						: URL_ERROR_MESSAGES[err.kind];
+			} else {
+				const message = err instanceof Error ? err.message : String(err);
+				urlError = `Couldn't load this URL: ${message}`;
+			}
+			urlForgeRewriteHint = null;
+		} finally {
+			urlLoading = false;
+		}
+	}
+
+	function handleUrlKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			handleUrlLoad();
+		}
+	}
+
+	/**
+	 * Handles file selection from the import input.
+	 */
+	async function handleFileSelect(e: Event): Promise<void> {
+		const input = e.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		await processImportedFile(file);
 	}
 
 	function handleQuickAdd(prefix: string, uri: string) {
@@ -371,6 +462,209 @@
 					<p class="text-xs text-destructive">
 						A project named <span class="font-semibold">“{projectName.trim()}”</span> already exists. Pick a different name.
 					</p>
+				{/if}
+			</div>
+
+			<!-- Import (optional) -->
+			<div class="grid gap-2">
+				<Label class="text-muted-foreground">Import existing profile (optional)</Label>
+
+				<!-- Tab toggle: File / URL -->
+				<div class="inline-flex h-8 items-center rounded-md border border-border bg-card p-0.5 self-start" role="tablist">
+					<button
+						type="button"
+						role="tab"
+						aria-selected={activeImportTab === 'file'}
+						class="px-3 h-7 text-xs rounded-sm transition-colors {activeImportTab === 'file' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'}"
+						onclick={() => (activeImportTab = 'file')}
+					>
+						File
+					</button>
+					<button
+						type="button"
+						role="tab"
+						aria-selected={activeImportTab === 'url'}
+						class="px-3 h-7 text-xs rounded-sm transition-colors {activeImportTab === 'url' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'}"
+						onclick={() => (activeImportTab = 'url')}
+					>
+						URL
+					</button>
+				</div>
+
+				{#if activeImportTab === 'file'}
+					{#if importedFile}
+						<!-- Selected file chip with remove + status. -->
+						<div class="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+							<FileIcon class="h-4 w-4 shrink-0 text-muted-foreground" />
+							<div class="min-w-0 flex-1">
+								<div class="truncate text-foreground" title={importedFile.name}>{importedFile.name}</div>
+								{#if importing}
+									<div class="flex items-center gap-1 text-xs text-muted-foreground">
+										<Loader class="h-3 w-3 animate-spin" />
+										Parsing…
+									</div>
+								{:else if importedProject}
+									{@const descCount = importedProject.descriptions.length}
+									{@const stmtCount = importedProject.descriptions.reduce((n, d) => n + d.statements.length, 0)}
+									<div class="text-xs text-muted-foreground">
+										Parsed as {importedProject.flavor === 'dctap' ? 'DCTAP' : 'SimpleDSP'}
+										· {descCount} {descCount === 1 ? 'description' : 'descriptions'}
+										· {stmtCount} {stmtCount === 1 ? 'statement' : 'statements'}
+									</div>
+								{/if}
+							</div>
+							<button
+								type="button"
+								class="text-muted-foreground hover:text-destructive transition-colors [&_svg]:pointer-events-none"
+								onclick={clearImport}
+								title="Remove file"
+							>
+								<X class="h-4 w-4" />
+							</button>
+						</div>
+					{:else}
+						<label
+							for="file-import"
+							class="flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-border px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:border-muted-foreground/50 hover:text-foreground [&_svg]:pointer-events-none"
+						>
+							<Upload class="h-4 w-4" />
+							<span>Choose file…</span>
+							<span class="ml-auto text-xs opacity-70">.yaml, .tsv, .csv, .xlsx</span>
+						</label>
+					{/if}
+
+					<input
+						bind:this={fileInputEl}
+						id="file-import"
+						type="file"
+						class="hidden"
+						accept=".yaml,.yml,.csv,.tsv,.xlsx"
+						onchange={handleFileSelect}
+					/>
+				{:else}
+					<!-- URL tab -->
+					<div class="flex gap-2">
+						<div class="relative flex-1">
+							<Link class="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+							<input
+								type="url"
+								bind:value={urlInput}
+								onkeydown={handleUrlKeydown}
+								placeholder="https://github.com/user/repo/blob/main/profile.yaml"
+								disabled={urlLoading}
+								class="w-full h-8 pl-8 pr-2 text-xs font-mono bg-background border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+							/>
+						</div>
+						<Button
+							size="sm"
+							variant="outline"
+							class="h-8 text-xs"
+							disabled={!urlInput.trim() || urlLoading}
+							onclick={handleUrlLoad}
+						>
+							{#if urlLoading}
+								<Loader class="h-3 w-3 animate-spin mr-1" />Loading…
+							{:else}
+								Load
+							{/if}
+						</Button>
+					</div>
+
+					{#if urlError}
+						<p class="text-xs text-destructive">{urlError}</p>
+					{:else if urlForgeRewriteHint}
+						<p class="text-xs italic text-muted-foreground">{urlForgeRewriteHint}</p>
+					{/if}
+
+					{#if importedFile && !urlError}
+						<div class="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+							<Link class="h-4 w-4 shrink-0 text-muted-foreground" />
+							<div class="min-w-0 flex-1">
+								<div class="truncate text-foreground" title={importedFile.name}>{importedFile.name}</div>
+								{#if importing}
+									<div class="flex items-center gap-1 text-xs text-muted-foreground">
+										<Loader class="h-3 w-3 animate-spin" />
+										Parsing…
+									</div>
+								{:else if importedProject}
+									{@const descCount = importedProject.descriptions.length}
+									{@const stmtCount = importedProject.descriptions.reduce((n, d) => n + d.statements.length, 0)}
+									<div class="text-xs text-muted-foreground">
+										Parsed as {importedProject.flavor === 'dctap' ? 'DCTAP' : 'SimpleDSP'}
+										· {descCount} {descCount === 1 ? 'description' : 'descriptions'}
+										· {stmtCount} {stmtCount === 1 ? 'statement' : 'statements'}
+									</div>
+								{/if}
+							</div>
+							<button
+								type="button"
+								class="text-muted-foreground hover:text-destructive transition-colors [&_svg]:pointer-events-none"
+								onclick={clearImport}
+								title="Remove import"
+							>
+								<X class="h-4 w-4" />
+							</button>
+						</div>
+					{/if}
+				{/if}
+
+				<!-- Shared advisory blocks (warnings / errors / empty parse). -->
+				{#if importedProject && importedProject.descriptions.length === 0}
+					<div class="rounded-md border border-border bg-card px-3 py-2.5 text-xs">
+						<div class="flex items-start gap-2">
+							<AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+							<div class="min-w-0 flex-1">
+								<p class="font-semibold text-foreground mb-0.5">
+									No content was found — a blank project will be created
+								</p>
+								<p class="text-muted-foreground leading-snug">
+									The file parsed but contained no descriptions. Check that it matches the selected
+									<span class="font-semibold text-foreground">{importedProject.flavor === 'dctap' ? 'DCTAP' : 'SimpleDSP'}</span>
+									format, or try the other flavor.
+								</p>
+							</div>
+						</div>
+					</div>
+				{:else if importedProject && importWarnings.length > 0}
+					<div class="rounded-md border border-border bg-card px-3 py-2.5 text-xs">
+						<div class="flex items-start gap-2">
+							<AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+							<div class="min-w-0 flex-1">
+								<p class="font-semibold text-foreground mb-1">
+									{importWarnings.length} {importWarnings.length === 1 ? 'note' : 'notes'} — the project will still be created
+								</p>
+								<div class="text-muted-foreground space-y-0.5 max-h-24 overflow-y-auto">
+									{#each importWarnings.slice(0, 5) as w}
+										<div>{w.message}</div>
+									{/each}
+									{#if importWarnings.length > 5}
+										<div class="italic opacity-80">and {importWarnings.length - 5} more…</div>
+									{/if}
+								</div>
+							</div>
+						</div>
+					</div>
+				{/if}
+
+				{#if importErrors.length > 0}
+					<div class="rounded-md border border-border bg-card px-3 py-2.5 text-xs">
+						<div class="flex items-start gap-2">
+							<AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+							<div class="min-w-0 flex-1">
+								<p class="font-semibold text-foreground mb-1">
+									{importErrors.length} {importErrors.length === 1 ? 'error' : 'errors'} during import
+								</p>
+								<div class="text-muted-foreground space-y-0.5 max-h-24 overflow-y-auto">
+									{#each importErrors.slice(0, 5) as err}
+										<div>{err.message}</div>
+									{/each}
+									{#if importErrors.length > 5}
+										<div class="italic opacity-80">and {importErrors.length - 5} more…</div>
+									{/if}
+								</div>
+							</div>
+						</div>
+					</div>
 				{/if}
 			</div>
 
@@ -549,142 +843,6 @@
 						/>
 					</div>
 				{/if}
-			</div>
-
-			<!-- File import (optional) -->
-			<div class="grid gap-2">
-				<Label for="file-import" class="text-muted-foreground">Import existing profile (optional)</Label>
-
-				{#if importedFile}
-					<!-- Selected file chip with remove + status. The parse
-						 summary is always shown when parsing succeeded —
-						 warnings and (rare) errors are reported below as
-						 advisory lines, not as a "parse failed" headline. -->
-					<div class="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
-						<FileIcon class="h-4 w-4 shrink-0 text-muted-foreground" />
-						<div class="min-w-0 flex-1">
-							<div class="truncate text-foreground" title={importedFile.name}>{importedFile.name}</div>
-							{#if importing}
-								<div class="flex items-center gap-1 text-xs text-muted-foreground">
-									<Loader class="h-3 w-3 animate-spin" />
-									Parsing…
-								</div>
-							{:else if importedProject}
-								{@const descCount = importedProject.descriptions.length}
-								{@const stmtCount = importedProject.descriptions.reduce((n, d) => n + d.statements.length, 0)}
-								<div class="text-xs text-muted-foreground">
-									Parsed as {importedProject.flavor === 'dctap' ? 'DCTAP' : 'SimpleDSP'}
-									· {descCount} {descCount === 1 ? 'description' : 'descriptions'}
-									· {stmtCount} {stmtCount === 1 ? 'statement' : 'statements'}
-								</div>
-							{/if}
-						</div>
-						<button
-							type="button"
-							class="text-muted-foreground hover:text-destructive transition-colors [&_svg]:pointer-events-none"
-							onclick={clearImport}
-							title="Remove file"
-						>
-							<X class="h-4 w-4" />
-						</button>
-					</div>
-
-					{#if importedProject && importedProject.descriptions.length === 0}
-						<!-- Empty parse result: the file was readable but
-							 produced no descriptions. Almost always a format
-							 mismatch (e.g. DCTAP CSV imported as SimpleDSP).
-							 Loud-but-not-error styling — the user can still
-							 proceed if they really want a blank project. -->
-						<!--
-							Subtle bordered card on the standard surface, no
-							tinted background — keeps the rest of Tapir's
-							visual language. The amber colour comes only
-							from the icon, which is enough cue without
-							washing out the body text.
-						-->
-						<div class="rounded-md border border-border bg-card px-3 py-2.5 text-xs">
-							<div class="flex items-start gap-2">
-								<AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-								<div class="min-w-0 flex-1">
-									<p class="font-semibold text-foreground mb-0.5">
-										No content was found — a blank project will be created
-									</p>
-									<p class="text-muted-foreground leading-snug">
-										The file parsed but contained no descriptions. Check that it matches the selected
-										<span class="font-semibold text-foreground">{importedProject.flavor === 'dctap' ? 'DCTAP' : 'SimpleDSP'}</span>
-										format, or try the other flavor.
-									</p>
-								</div>
-							</div>
-						</div>
-					{:else if importedProject && importWarnings.length > 0}
-						<!-- Warnings: non-blocking. The most common case is
-							 undeclared prefixes, which the editor surfaces
-							 with one-click declare actions after the project
-							 is created. -->
-						<div class="rounded-md border border-border bg-card px-3 py-2.5 text-xs">
-							<div class="flex items-start gap-2">
-								<AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-								<div class="min-w-0 flex-1">
-									<p class="font-semibold text-foreground mb-1">
-										{importWarnings.length} {importWarnings.length === 1 ? 'note' : 'notes'} — the project will still be created
-									</p>
-									<div class="text-muted-foreground space-y-0.5 max-h-24 overflow-y-auto">
-										{#each importWarnings.slice(0, 5) as w}
-											<div>{w.message}</div>
-										{/each}
-										{#if importWarnings.length > 5}
-											<div class="italic opacity-80">and {importWarnings.length - 5} more…</div>
-										{/if}
-									</div>
-								</div>
-							</div>
-						</div>
-					{/if}
-
-					{#if importErrors.length > 0}
-						<!-- Errors: structural problems that may genuinely
-							 break the imported profile. Same neutral card,
-							 destructive icon for severity. -->
-						<div class="rounded-md border border-border bg-card px-3 py-2.5 text-xs">
-							<div class="flex items-start gap-2">
-								<AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-								<div class="min-w-0 flex-1">
-									<p class="font-semibold text-foreground mb-1">
-										{importErrors.length} {importErrors.length === 1 ? 'error' : 'errors'} during import
-									</p>
-									<div class="text-muted-foreground space-y-0.5 max-h-24 overflow-y-auto">
-										{#each importErrors.slice(0, 5) as err}
-											<div>{err.message}</div>
-										{/each}
-										{#if importErrors.length > 5}
-											<div class="italic opacity-80">and {importErrors.length - 5} more…</div>
-										{/if}
-									</div>
-								</div>
-							</div>
-						</div>
-					{/if}
-				{:else}
-					<!-- Empty picker -->
-					<label
-						for="file-import"
-						class="flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-border px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:border-muted-foreground/50 hover:text-foreground [&_svg]:pointer-events-none"
-					>
-						<Upload class="h-4 w-4" />
-						<span>Choose file…</span>
-						<span class="ml-auto text-xs opacity-70">.yaml, .tsv, .csv, .xlsx</span>
-					</label>
-				{/if}
-
-				<input
-					bind:this={fileInputEl}
-					id="file-import"
-					type="file"
-					class="hidden"
-					accept=".yaml,.yml,.csv,.tsv,.xlsx"
-					onchange={handleFileSelect}
-				/>
 			</div>
 		</div>
 
