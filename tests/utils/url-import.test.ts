@@ -68,3 +68,31 @@ describe('rewriteForgeBlobUrl — GitLab', () => {
 		expect(result).toEqual({ rewritten: url, forge: null });
 	});
 });
+
+describe('rewriteForgeBlobUrl — Bitbucket', () => {
+	it('rewrites a bitbucket.org src URL to raw', () => {
+		const result = rewriteForgeBlobUrl(
+			'https://bitbucket.org/team/repo/src/main/profile.csv',
+		);
+		expect(result).toEqual({
+			rewritten:
+				'https://bitbucket.org/team/repo/raw/main/profile.csv',
+			forge: 'bitbucket',
+		});
+	});
+
+	it('passes a Bitbucket raw URL through unchanged', () => {
+		const url =
+			'https://bitbucket.org/team/repo/raw/main/profile.csv';
+		const result = rewriteForgeBlobUrl(url);
+		expect(result).toEqual({ rewritten: url, forge: null });
+	});
+});
+
+describe('rewriteForgeBlobUrl — unrelated host', () => {
+	it('passes a plain HTTPS URL through unchanged', () => {
+		const url = 'https://example.org/profiles/x.yaml';
+		const result = rewriteForgeBlobUrl(url);
+		expect(result).toEqual({ rewritten: url, forge: null });
+	});
+});

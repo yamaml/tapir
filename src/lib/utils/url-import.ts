@@ -74,6 +74,19 @@ export function rewriteForgeBlobUrl(input: string): {
 		}
 	}
 
+	// Bitbucket: bitbucket.org/{owner}/{repo}/src/{ref}/{path…}
+	//         →  bitbucket.org/{owner}/{repo}/raw/{ref}/{path…}
+	if (url.hostname === 'bitbucket.org') {
+		const m = url.pathname.match(/^\/([^/]+)\/([^/]+)\/src\/(.+)$/);
+		if (m) {
+			const [, owner, repo, refAndPath] = m;
+			return {
+				rewritten: `https://bitbucket.org/${owner}/${repo}/raw/${refAndPath}`,
+				forge: 'bitbucket',
+			};
+		}
+	}
+
 	// GitLab (gitlab.com or self-hosted): {host}/…/-/blob/{ref}/{path…}
 	//                                  →  {host}/…/-/raw/{ref}/{path…}
 	// Self-hosted GitLab uses arbitrary hostnames, so we match on the
