@@ -37,3 +37,34 @@ describe('rewriteForgeBlobUrl — GitHub', () => {
 		expect(result).toEqual({ rewritten: 'not a url', forge: null });
 	});
 });
+
+describe('rewriteForgeBlobUrl — GitLab', () => {
+	it('rewrites a gitlab.com blob URL', () => {
+		const result = rewriteForgeBlobUrl(
+			'https://gitlab.com/group/project/-/blob/main/profile.yaml',
+		);
+		expect(result).toEqual({
+			rewritten:
+				'https://gitlab.com/group/project/-/raw/main/profile.yaml',
+			forge: 'gitlab',
+		});
+	});
+
+	it('rewrites a self-hosted GitLab blob URL', () => {
+		const result = rewriteForgeBlobUrl(
+			'https://git.example.org/team/repo/-/blob/v1.0/x.csv',
+		);
+		expect(result).toEqual({
+			rewritten:
+				'https://git.example.org/team/repo/-/raw/v1.0/x.csv',
+			forge: 'gitlab',
+		});
+	});
+
+	it('passes a GitLab raw URL through unchanged', () => {
+		const url =
+			'https://gitlab.com/group/project/-/raw/main/profile.yaml';
+		const result = rewriteForgeBlobUrl(url);
+		expect(result).toEqual({ rewritten: url, forge: null });
+	});
+});

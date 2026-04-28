@@ -74,5 +74,19 @@ export function rewriteForgeBlobUrl(input: string): {
 		}
 	}
 
+	// GitLab (gitlab.com or self-hosted): {host}/…/-/blob/{ref}/{path…}
+	//                                  →  {host}/…/-/raw/{ref}/{path…}
+	// Self-hosted GitLab uses arbitrary hostnames, so we match on the
+	// `/-/blob/` segment rather than a specific host. We replace only
+	// the first occurrence to avoid breaking pathological paths that
+	// contain `-/blob/` literally inside a filename.
+	if (url.pathname.includes('/-/blob/')) {
+		const rewrittenPath = url.pathname.replace('/-/blob/', '/-/raw/');
+		return {
+			rewritten: `${url.protocol}//${url.host}${rewrittenPath}${url.search}${url.hash}`,
+			forge: 'gitlab',
+		};
+	}
+
 	return { rewritten: input, forge: null };
 }
