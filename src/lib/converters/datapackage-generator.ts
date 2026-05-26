@@ -71,11 +71,13 @@ const XSD_TYPE_MAP: Record<string, { type: string; format?: string }> = {
  * @returns An object with `type` and optionally `format`.
  */
 function resolveFieldType(stmt: Statement): { type: string; format?: string } {
-	if (stmt.datatype) {
-		// Extract local name from prefixed datatype (e.g. "xsd:string" -> "string")
-		const local = stmt.datatype.includes(':')
-			? stmt.datatype.split(':').pop()!
-			: stmt.datatype;
+	// Frictionless permits one type per field; for multi-datatype, the
+	// first is emitted. Lossy by construction — multi-datatype warnings
+	// surface via collectMultiDatatypeWarnings on the package as a whole.
+	const datatypes = stmt.datatype ?? [];
+	const first = datatypes[0];
+	if (first) {
+		const local = first.includes(':') ? first.split(':').pop()! : first;
 		const mapped = XSD_TYPE_MAP[local];
 		if (mapped) return { ...mapped };
 	}

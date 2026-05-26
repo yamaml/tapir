@@ -136,7 +136,7 @@ function today(): string {
  * @returns The display type string.
  */
 function resolveType(stmt: Statement, labels: FlavorLabels): string {
-	if (stmt.datatype) return stmt.datatype;
+	if (stmt.datatype && stmt.datatype.length > 0) return stmt.datatype.join(' ');
 	if (stmt.valueType === 'iri') return labels.valueTypes.iri;
 	if (stmt.valueType === 'literal') return labels.valueTypes.literal;
 	if (stmt.valueType === 'bnode') return labels.valueTypes.bnode;

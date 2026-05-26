@@ -180,7 +180,9 @@ export function formatCard(
  */
 export function typeLabel(stmt: Statement, ns: NamespaceMap): string {
 	if (stmt.shapeRefs && stmt.shapeRefs.length > 0) return stmt.shapeRefs.join(' ');
-	if (stmt.datatype) return compactIRI(stmt.datatype, ns);
+	if (stmt.datatype && stmt.datatype.length > 0) {
+		return stmt.datatype.map((dt) => compactIRI(dt, ns)).join(' ');
+	}
 	if (stmt.valueType === 'iri') return 'URI';
 	if (stmt.valueType === 'literal') return 'Literal';
 	if (stmt.valueType) return stmt.valueType;

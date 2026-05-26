@@ -106,13 +106,17 @@ export function formatNodeConstraint(stmt: Statement): string {
 
 	// Shape reference(s) take precedence. Multi-shape becomes a disjunction.
 	const refs = stmt.shapeRefs ?? [];
+	const dts = stmt.datatype ?? [];
 	if (refs.length === 1) {
 		parts.push(`@<${refs[0]}>`);
 	} else if (refs.length > 1) {
 		parts.push(`(${refs.map((r) => `@<${r}>`).join(' OR ')})`);
-	} else if (stmt.datatype) {
+	} else if (dts.length === 1) {
 		// Datatype constraint (already prefixed, e.g. "xsd:string")
-		parts.push(stmt.datatype);
+		parts.push(dts[0]);
+	} else if (dts.length > 1) {
+		// Multi-datatype → ShEx node-constraint disjunction.
+		parts.push(`(${dts.join(' OR ')})`);
 	} else if (Array.isArray(stmt.values) && stmt.values.length > 0) {
 		// Value set
 		const vals = stmt.values.map((v) => `"${v}"`).join(' ');

@@ -194,16 +194,34 @@ export function buildPropertyShape(
 		quads.push(quad(propNode, SH_MAX_COUNT, literal(String(stmt.max), XSD_INTEGER)));
 	}
 
-	// sh:datatype
-	if (stmt.datatype) {
-		const dtIri = expandPrefixed(stmt.datatype, namespaces, base);
+	// sh:datatype. sh:datatype itself is single-valued in SHACL, so
+	// multi-datatype becomes sh:or of nested [sh:datatype X] blank
+	// nodes — the canonical SHACL pattern for "datatype is one of".
+	// Mirrors the multi-shape sh:or block below.
+	const datatypes = stmt.datatype ?? [];
+	if (datatypes.length === 1) {
+		const dtIri = expandPrefixed(datatypes[0], namespaces, base);
 		if (dtIri) {
 			quads.push(quad(propNode, SH_DATATYPE, namedNode(dtIri)));
+		}
+	} else if (datatypes.length > 1) {
+		const dtAnons = datatypes
+			.map((dt) => {
+				const dtIri = expandPrefixed(dt, namespaces, base);
+				if (!dtIri) return null;
+				const anon = blankNode();
+				quads.push(quad(anon, SH_DATATYPE, namedNode(dtIri)));
+				return anon;
+			})
+			.filter((n): n is ReturnType<typeof blankNode> => n !== null);
+		if (dtAnons.length > 0) {
+			const listHead = buildRdfList(dtAnons, quads);
+			quads.push(quad(propNode, SH_OR, listHead));
 		}
 	}
 
 	// sh:nodeKind (only when no datatype -- datatype already implies Literal)
-	if (!stmt.datatype) {
+	if (datatypes.length === 0) {
 		const nodeKind = resolveNodeKind(stmt.valueType);
 		if (nodeKind) {
 			quads.push(quad(propNode, SH_NODE_KIND, nodeKind));

@@ -262,7 +262,7 @@ export function buildDctapRows(project: TapirProject): DctapOutputRow[] {
 				mandatory: toMandatory(stmt.min),
 				repeatable: toRepeatable(stmt.max, stmt.min),
 				valueNodeType: toValueNodeType(stmt.valueType),
-				valueDataType: stmt.datatype || '',
+				valueDataType: (stmt.datatype || []).join(' '),
 				valueConstraint,
 				valueConstraintType,
 				valueShape: (stmt.shapeRefs || []).join(' '),

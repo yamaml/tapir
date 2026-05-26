@@ -59,7 +59,9 @@ function serializeStatement(stmt: Statement): Record<string, unknown> {
 	const yamaType = resolveYamaType(stmt.valueType);
 	if (yamaType) obj.type = yamaType;
 
-	if (stmt.datatype) obj.datatype = stmt.datatype;
+	if (Array.isArray(stmt.datatype) && stmt.datatype.length > 0) {
+		obj.datatype = [...stmt.datatype];
+	}
 	if (Array.isArray(stmt.shapeRefs) && stmt.shapeRefs.length > 0) {
 		obj.description = stmt.shapeRefs.length === 1 ? stmt.shapeRefs[0] : stmt.shapeRefs;
 	}

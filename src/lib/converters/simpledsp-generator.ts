@@ -81,7 +81,7 @@ export function resolveSimpleDspValueType(stmt: Statement): string {
 	if (stmt.valueType === 'iri') return 'IRI';
 	if (
 		stmt.valueType === 'literal' ||
-		stmt.datatype ||
+		(stmt.datatype && stmt.datatype.length > 0) ||
 		(Array.isArray(stmt.values) && stmt.values.length > 0)
 	) {
 		return 'literal';
@@ -112,8 +112,12 @@ export function resolveSimpleDspValueType(stmt: Statement): string {
  * // => '#Agent'
  *
  * @example
- * resolveSimpleDspConstraint({ datatype: 'xsd:date' })
+ * resolveSimpleDspConstraint({ datatype: ['xsd:date'] })
  * // => 'xsd:date'
+ *
+ * @example
+ * resolveSimpleDspConstraint({ datatype: ['xsd:decimal', 'xsd:integer'] })
+ * // => 'xsd:decimal xsd:integer'
  */
 export function resolveSimpleDspConstraint(stmt: Statement): string {
 	// Shape reference(s)
@@ -126,9 +130,10 @@ export function resolveSimpleDspConstraint(stmt: Statement): string {
 		return stmt.classConstraint.join(' ');
 	}
 
-	// Datatype
-	if (stmt.datatype) {
-		return stmt.datatype;
+	// Datatype(s). Multi-datatype is endorsed by the SimpleDSP spec
+	// (§4.6 Table 16): a space-separated list represents a union.
+	if (stmt.datatype && stmt.datatype.length > 0) {
+		return stmt.datatype.join(' ');
 	}
 
 	// Vocabulary scheme (inScheme)

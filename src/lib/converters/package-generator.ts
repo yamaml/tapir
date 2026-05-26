@@ -42,7 +42,7 @@ import { buildOwlDsp } from './owldsp-generator';
  * @returns The display type string.
  */
 function resolveType(stmt: Statement): string {
-	if (stmt.datatype) return stmt.datatype;
+	if (stmt.datatype && stmt.datatype.length > 0) return stmt.datatype.join(' ');
 	if (stmt.valueType === 'iri') return 'IRI';
 	if (stmt.valueType === 'literal') return 'literal';
 	if (stmt.valueType === 'bnode') return 'bnode';

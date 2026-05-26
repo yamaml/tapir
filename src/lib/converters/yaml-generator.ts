@@ -77,7 +77,12 @@ function serializeStatement(stmt: Statement): Record<string, unknown> {
 	const yamaType = resolveYamaType(stmt.valueType);
 	if (yamaType) obj.type = yamaType;
 
-	if (stmt.datatype) obj.datatype = stmt.datatype;
+	// Datatype(s). Multi-datatype is endorsed by SimpleDSP and used by
+	// DCMI SRAP; YAMAML serialises as a YAML sequence even for a single
+	// value so consumers can rely on a uniform shape.
+	if (Array.isArray(stmt.datatype) && stmt.datatype.length > 0) {
+		obj.datatype = [...stmt.datatype];
+	}
 	// YAMAML `description` = shape reference(s). Scalar when single, array
 	// when multiple — same scalar-or-array convention as `a` and `inScheme`.
 	if (Array.isArray(stmt.shapeRefs) && stmt.shapeRefs.length > 0) {

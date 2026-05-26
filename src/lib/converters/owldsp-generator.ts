@@ -155,23 +155,21 @@ export function buildStatementTemplate(
 	}
 
 	// Datatype → owl:onDataRange (with owl:unionOf when multiple)
-	if (stmt.datatype) {
-		const datatypes = stmt.datatype.split(/\s+/).filter(Boolean);
-		if (datatypes.length === 1) {
-			const dtIri = expandPrefixed(datatypes[0], namespaces, base);
-			if (dtIri) {
-				quads.push(quad(stmtNode, OWL_ON_DATA_RANGE, namedNode(dtIri)));
-			}
-		} else {
-			const dtNodes = datatypes
-				.map((dt) => expandPrefixed(dt, namespaces, base))
-				.filter((iri): iri is string => !!iri)
-				.map((iri) => namedNode(iri));
-			const listHead = buildRdfList(dtNodes, quads);
-			const unionAnon = blankNode();
-			quads.push(quad(unionAnon, OWL_UNION_OF, listHead));
-			quads.push(quad(stmtNode, OWL_ON_DATA_RANGE, unionAnon));
+	const datatypes = stmt.datatype ?? [];
+	if (datatypes.length === 1) {
+		const dtIri = expandPrefixed(datatypes[0], namespaces, base);
+		if (dtIri) {
+			quads.push(quad(stmtNode, OWL_ON_DATA_RANGE, namedNode(dtIri)));
 		}
+	} else if (datatypes.length > 1) {
+		const dtNodes = datatypes
+			.map((dt) => expandPrefixed(dt, namespaces, base))
+			.filter((iri): iri is string => !!iri)
+			.map((iri) => namedNode(iri));
+		const listHead = buildRdfList(dtNodes, quads);
+		const unionAnon = blankNode();
+		quads.push(quad(unionAnon, OWL_UNION_OF, listHead));
+		quads.push(quad(stmtNode, OWL_ON_DATA_RANGE, unionAnon));
 	}
 
 	// Shape reference(s) → owl:onClass (or owl:unionOf when multiple)
