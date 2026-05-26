@@ -802,12 +802,14 @@
 			<!-- Settings popover -->
 			<Popover>
 				<PopoverTrigger>
-					<button
-						class="rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground [&_svg]:pointer-events-none"
-						title="Diagram settings"
-					>
-						<Settings2 class="h-3.5 w-3.5" />
-					</button>
+					<Tip text="Diagram settings (label style, depth, edge routing)">
+						<button
+							class="rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground [&_svg]:pointer-events-none"
+							aria-label="Diagram settings"
+						>
+							<Settings2 class="h-3.5 w-3.5" />
+						</button>
+					</Tip>
 				</PopoverTrigger>
 				<PopoverContent class="w-52 p-0" align="end">
 					<div class="px-3 py-2">
