@@ -50,16 +50,15 @@
 	});
 
 	/**
-	 * Set of prefixes referenced anywhere in the profile that are
-	 * neither declared in `namespaces` nor a built-in standard prefix.
-	 * Standard prefixes are the ones the converters auto-recognise
-	 * (rdf, rdfs, owl, xsd, etc.) — see STANDARD_PREFIXES in
-	 * simpledsp-generator.
+	 * Prefixes referenced anywhere in the profile that aren't declared in
+	 * `namespaces`. We do not suppress "well-known" prefixes (xsd, rdf, …)
+	 * here even though the converters recognise the spelling: an undeclared
+	 * `xsd:` still produces malformed IRIs in some serialisations and
+	 * leaves the project's namespace map incomplete on export. Flagging
+	 * them via the banner is the cheapest way to give the user a one-click
+	 * fix; the "known" chip styling + Declare-all button make the noise
+	 * trivially dismissible.
 	 */
-	const STANDARD = new Set([
-		'rdf', 'rdfs', 'owl', 'xsd', 'dc', 'dcterms', 'foaf', 'skos', 'xl', 'schema',
-	]);
-
 	let undeclaredPrefixes = $derived.by((): string[] => {
 		const found = new Set<string>();
 		const collect = (s: string | undefined | null) => {
@@ -84,10 +83,26 @@
 			}
 		}
 		const ns = project.namespaces ?? {};
-		return [...found]
-			.filter((p) => !(p in ns) && !STANDARD.has(p))
-			.sort();
+		return [...found].filter((p) => !(p in ns)).sort();
 	});
+
+	/** Subset of undeclared prefixes whose canonical URI is already known
+	 *  (from the shipped manifest or the @zazuko/prefixes bundle). These
+	 *  are the prefixes the Declare-all button can resolve in one tap. */
+	let knownUndeclared = $derived(
+		undeclaredPrefixes.filter((p) => manifestByPrefix.has(p))
+	);
+
+	function declareAll() {
+		if (knownUndeclared.length === 0) return;
+		const proj = $currentProject;
+		const next = { ...(proj?.namespaces ?? {}) };
+		for (const p of knownUndeclared) {
+			const uri = manifestByPrefix.get(p);
+			if (uri && !(p in next)) next[p] = uri;
+		}
+		setNamespaces(next);
+	}
 
 	// ── Inline declare ───────────────────────────────────────────────
 	let editingPrefix = $state<string | null>(null);
@@ -131,10 +146,23 @@
 				<span class="font-medium">{undeclaredPrefixes.length}</span>
 				{undeclaredPrefixes.length === 1 ? 'prefix is' : 'prefixes are'}
 				used in this profile but not declared in namespaces.
-				<span class="text-muted-foreground">Click a prefix below to add its namespace.</span>
+				<span class="text-muted-foreground">
+					Click a prefix to add its namespace{#if knownUndeclared.length > 1}, or declare all known prefixes at once{/if}.
+				</span>
 			</p>
 
 			<div class="flex flex-wrap items-center gap-1.5">
+				{#if knownUndeclared.length > 1}
+					<button
+						type="button"
+						onclick={declareAll}
+						class="inline-flex items-center gap-1 rounded border border-primary/40 bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/20 transition-colors [&_svg]:pointer-events-none"
+						title="Add canonical namespaces for every prefix marked KNOWN"
+					>
+						<Check class="h-3 w-3" />
+						Declare all known ({knownUndeclared.length})
+					</button>
+				{/if}
 				{#each undeclaredPrefixes as prefix}
 					{#if editingPrefix === prefix}
 						<div class="inline-flex items-center gap-1 rounded border border-amber-500/40 bg-card px-1.5 py-1">
