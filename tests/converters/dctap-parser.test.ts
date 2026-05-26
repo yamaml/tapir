@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 import {
 	parseBool,
 	fromValueNodeType,
@@ -7,6 +10,9 @@ import {
 	dctapRowsToTapir,
 } from '$lib/converters/dctap-parser';
 import type { DctapRow } from '$lib/converters/dctap-parser';
+import { parseCsvRows, isDctapFormat } from '$lib/components/editor/import-handler';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 // ── parseBool ───────────────────────────────────────────────────
 
@@ -401,5 +407,83 @@ describe('dctapRowsToTapir', () => {
 		const stmts = result.data.descriptions[0].statements;
 		expect(stmts[0].id).toBe('name');
 		expect(stmts[1].id).toBe('name2');
+	});
+});
+
+// ── Case-insensitive header handling ────────────────────────────
+
+describe('dctapRowsToTapir — case-insensitive column headers', () => {
+	it('accepts any letter-case for every DCTAP element', () => {
+		// Each element is supplied under a deliberately different
+		// casing — lower, upper, mixed, capitalised — to prove the
+		// parser does not depend on the canonical camelCase spelling.
+		const rows = [
+			{
+				SHAPEID: 'PersonShape',
+				shapelabel: 'Person',
+				PropertyID: 'foaf:name',
+				PROPERTYLABEL: 'Name',
+				Mandatory: 'TRUE',
+				REPEATABLE: 'FALSE',
+				valuenodetype: 'literal',
+				valueDatatype: 'xsd:string',
+				ValueShape: '',
+				valueconstraint: 'a,b',
+				VALUECONSTRAINTTYPE: 'picklist',
+				NOTE: 'Full name',
+			},
+		] as unknown as DctapRow[];
+
+		const result = dctapRowsToTapir(rows);
+		expect(result.errors).toHaveLength(0);
+		expect(result.data.descriptions).toHaveLength(1);
+
+		const desc = result.data.descriptions[0];
+		expect(desc.name).toBe('PersonShape');
+		expect(desc.label).toBe('Person');
+
+		const stmt = desc.statements[0];
+		expect(stmt.propertyId).toBe('foaf:name');
+		expect(stmt.label).toBe('Name');
+		expect(stmt.min).toBe(1);
+		expect(stmt.max).toBe(1);
+		expect(stmt.valueType).toBe('literal');
+		expect(stmt.datatype).toBe('xsd:string');
+		expect(stmt.values).toEqual(['a', 'b']);
+		expect(stmt.constraintType).toBe('picklist');
+		expect(stmt.note).toBe('Full name');
+	});
+
+	it('imports the SRAP April model CSV with lowercase valueDatatype', () => {
+		// Real-world DCMI SRAP profile that uses `valueDatatype`
+		// (lowercase `t`) rather than `valueDataType`. Before the
+		// fix, every datatype was silently dropped on import.
+		const csvPath = resolve(HERE, '../fixtures/srap-april-model.csv');
+		const csv = readFileSync(csvPath, 'utf-8');
+
+		const rows = parseCsvRows(csv);
+		expect(isDctapFormat(Object.keys(rows[0]))).toBe(true);
+
+		const result = dctapRowsToTapir(rows as DctapRow[], 'SRAP April');
+		expect(result.errors).toHaveLength(0);
+
+		const findStmt = (prop: string) => {
+			for (const d of result.data.descriptions) {
+				for (const s of d.statements) {
+					if (s.propertyId === prop) return s;
+				}
+			}
+			return undefined;
+		};
+
+		expect(findStmt('dct:language')?.datatype).toBe('xsd:string');
+		expect(findStmt('dct:abstract')?.datatype).toBe('xsd:string');
+		expect(findStmt('bibo:isbn')?.datatype).toBe('xsd:string');
+		expect(findStmt('srap:embargoDateRange')?.datatype).toBe('edtf:EDTF');
+
+		const nonEmpty = result.data.descriptions.flatMap((d) =>
+			d.statements.filter((s) => s.datatype),
+		);
+		expect(nonEmpty.length).toBeGreaterThan(20);
 	});
 });
