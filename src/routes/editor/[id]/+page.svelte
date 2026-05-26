@@ -26,6 +26,7 @@
 	import SaveStatus from '$lib/components/editor/save-status.svelte';
 	import SaveIndicator from '$lib/components/editor/save-indicator.svelte';
 	import VersionHistoryDialog from '$lib/components/editor/version-history-dialog.svelte';
+	import Tip from '$lib/components/ui/tip.svelte';
 	import Download from 'lucide-svelte/icons/download';
 	import ShieldCheck from 'lucide-svelte/icons/shield-check';
 	import Save from 'lucide-svelte/icons/save';
@@ -413,17 +414,23 @@
 					onValueChange={handleLangChange}
 					aria-label="SimpleDSP language"
 				>
-					<ToggleGroupItem value="en" class="text-xs px-2.5 h-7" title="English (OWL-DSP labels)">EN</ToggleGroupItem>
-					<ToggleGroupItem value="jp" class="text-xs px-2.5 h-7" title="日本語 (MetaBridge labels)">JP</ToggleGroupItem>
+					<Tip text="English (OWL-DSP labels)">
+						<ToggleGroupItem value="en" class="text-xs px-2.5 h-7">EN</ToggleGroupItem>
+					</Tip>
+					<Tip text="日本語 (MetaBridge labels)">
+						<ToggleGroupItem value="jp" class="text-xs px-2.5 h-7">JP</ToggleGroupItem>
+					</Tip>
 				</ToggleGroup>
 			{/if}
 
 			<Separator orientation="vertical" class="!h-5 mx-1" />
 
 			<!-- Search -->
-			<Button variant="ghost" size="sm" class="h-7 px-2 text-xs" onclick={toggleSearch} title="Search (Ctrl+K)">
-				<SearchIcon class="h-3.5 w-3.5" />
-			</Button>
+			<Tip text="Search properties across the profile" shortcut="Ctrl+K">
+				<Button variant="ghost" size="sm" class="h-7 px-2 text-xs" onclick={toggleSearch}>
+					<SearchIcon class="h-3.5 w-3.5" />
+				</Button>
+			</Tip>
 			{#if searchVisible}
 				<div class="relative flex items-center gap-1.5">
 					<div class="relative flex items-center">
@@ -449,12 +456,13 @@
 						 answers the "where is the search applied?" question
 						 directly. Hidden when the query is empty. -->
 					{#if searchQuery}
-						<span
-							class="text-[10px] font-medium tabular-nums rounded px-1.5 py-0.5 {currentDescriptionMatchCount > 0 ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground'}"
-							title={currentDescriptionMatchCount > 0 ? `${currentDescriptionMatchCount} matching ${currentDescriptionMatchCount === 1 ? 'statement' : 'statements'} in this ${labels.descriptionSingular.toLowerCase()}` : 'No matching statements in this ' + labels.descriptionSingular.toLowerCase()}
-						>
-							{currentDescriptionMatchCount} here
-						</span>
+						<Tip text={currentDescriptionMatchCount > 0 ? `${currentDescriptionMatchCount} matching ${currentDescriptionMatchCount === 1 ? 'statement' : 'statements'} in this ${labels.descriptionSingular.toLowerCase()}` : 'No matching statements in this ' + labels.descriptionSingular.toLowerCase()}>
+							<span
+								class="text-[10px] font-medium tabular-nums rounded px-1.5 py-0.5 {currentDescriptionMatchCount > 0 ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground'}"
+							>
+								{currentDescriptionMatchCount} here
+							</span>
+						</Tip>
 					{/if}
 				</div>
 			{/if}
@@ -466,29 +474,36 @@
 			<SaveIndicator {hasUnsavedChanges} {lastSnapshotTime} {savingInProgress} />
 
 			<!-- Save → History → Validate → Export -->
-			<Button
-				variant="ghost"
-				size="sm"
-				class="h-7 px-2 text-xs"
-				disabled={!hasUnsavedChanges}
-				onclick={handleQuickSave}
-				title="Save version (Ctrl+S)"
-			>
-				<Save class="mr-1 h-3.5 w-3.5" />
-				Save
-			</Button>
-			<Button variant="ghost" size="sm" class="h-7 px-2 text-xs" onclick={() => (showHistoryDialog = true)}>
-				<History class="mr-1 h-3.5 w-3.5" />
-				History
-			</Button>
-			<Button variant="ghost" size="sm" class="h-7 px-2 text-xs" onclick={() => (showValidationPanel = !showValidationPanel)}>
-				<ShieldCheck class="mr-1 h-3.5 w-3.5" />
-				Validate
-			</Button>
-			<Button variant="ghost" size="sm" class="h-7 px-2 text-xs" onclick={() => (showExportDialog = true)}>
-				<Download class="mr-1 h-3.5 w-3.5" />
-				Export
-			</Button>
+			<Tip text="Save a labelled snapshot of the current state" shortcut="Ctrl+S">
+				<Button
+					variant="ghost"
+					size="sm"
+					class="h-7 px-2 text-xs"
+					disabled={!hasUnsavedChanges}
+					onclick={handleQuickSave}
+				>
+					<Save class="mr-1 h-3.5 w-3.5" />
+					Save
+				</Button>
+			</Tip>
+			<Tip text="Browse and restore previous snapshots of this profile">
+				<Button variant="ghost" size="sm" class="h-7 px-2 text-xs" onclick={() => (showHistoryDialog = true)}>
+					<History class="mr-1 h-3.5 w-3.5" />
+					History
+				</Button>
+			</Tip>
+			<Tip text="Run validation checks across the profile">
+				<Button variant="ghost" size="sm" class="h-7 px-2 text-xs" onclick={() => (showValidationPanel = !showValidationPanel)}>
+					<ShieldCheck class="mr-1 h-3.5 w-3.5" />
+					Validate
+				</Button>
+			</Tip>
+			<Tip text="Download the profile as SimpleDSP, DCTAP, SHACL, ShEx, OWL-DSP, YAML, JSON or a ZIP package">
+				<Button variant="ghost" size="sm" class="h-7 px-2 text-xs" onclick={() => (showExportDialog = true)}>
+					<Download class="mr-1 h-3.5 w-3.5" />
+					Export
+				</Button>
+			</Tip>
 		</div>
 
 		<!-- Banner: prefixes used in the profile but not declared -->
