@@ -205,6 +205,53 @@ export function toStatementKey(propertyID: string, existingKeys: Set<string>): s
 	return key;
 }
 
+// ── Header Normalisation ────────────────────────────────────────
+
+/**
+ * Canonical DCTAP element names, used to map case-insensitive
+ * input headers back to the shape `dctapRowsToTapir` expects.
+ *
+ * The DCTAP elements list uses camelCase, but real-world profiles
+ * (including the DCMI SRAP examples) ship CSVs with variants like
+ * `valueDatatype` (lowercase `t`). We accept any letter case and
+ * always present canonical keys to the converter.
+ */
+const CANONICAL_DCTAP_KEYS = [
+	'shapeID',
+	'shapeLabel',
+	'propertyID',
+	'propertyLabel',
+	'mandatory',
+	'repeatable',
+	'valueNodeType',
+	'valueDataType',
+	'valueShape',
+	'valueConstraint',
+	'valueConstraintType',
+	'note',
+] as const;
+
+const CANONICAL_BY_LOWER = new Map<string, string>(
+	CANONICAL_DCTAP_KEYS.map((k) => [k.toLowerCase(), k]),
+);
+
+/**
+ * Returns a row with canonical DCTAP keys, picking the matching
+ * value from `row` regardless of the input header's letter case.
+ *
+ * Unknown columns are dropped — `dctapRowsToTapir` only reads
+ * canonical fields, and the alternative (preserving every variant
+ * spelling) would just leave stale data on the row.
+ */
+function normaliseRow(row: DctapRow): DctapRow {
+	const out: Record<string, string | undefined> = {};
+	for (const key of Object.keys(row)) {
+		const canonical = CANONICAL_BY_LOWER.get(key.trim().toLowerCase());
+		if (canonical) out[canonical] = row[key];
+	}
+	return out as DctapRow;
+}
+
 // ── Main Converter ──────────────────────────────────────────────
 
 /**
@@ -237,7 +284,7 @@ export function dctapRowsToTapir(
 	let currentShapeID: string | null = null;
 
 	for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
-		const row = rows[rowIndex];
+		const row = normaliseRow(rows[rowIndex]);
 		const shapeID = String(row.shapeID || '').trim();
 		const propertyID = String(row.propertyID || '').trim();
 
