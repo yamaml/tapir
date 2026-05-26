@@ -104,6 +104,15 @@
 			<span class="text-xs text-muted-foreground">Privacy-first: all data stays in your browser</span>
 			<Separator orientation="vertical" class="!h-3" />
 			<a
+				href="https://www.yamaml.org"
+				target="_blank"
+				rel="noopener noreferrer"
+				class="text-xs text-muted-foreground hover:text-primary transition-colors"
+			>
+				YAMAML
+			</a>
+			<Separator orientation="vertical" class="!h-3" />
+			<a
 				href="https://docs.yamaml.org/specs/simpledsp/spec/"
 				target="_blank"
 				rel="noopener noreferrer"
