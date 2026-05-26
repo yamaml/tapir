@@ -21,6 +21,7 @@
 	import ChevronRight from 'lucide-svelte/icons/chevron-right';
 	import Copy from 'lucide-svelte/icons/copy';
 	import Trash2 from 'lucide-svelte/icons/trash-2';
+	import Tip from '$lib/components/ui/tip.svelte';
 	import NewProjectDialog from '$lib/components/dashboard/new-project-dialog.svelte';
 
 	let showNewProject = $state(false);
@@ -145,24 +146,26 @@
 							<div class="flex w-full items-center justify-between">
 								<span class="text-xs text-muted-foreground">Edited {relativeTime(project.updatedAt)}</span>
 								<div class="flex items-center gap-1">
-									<Button
-										variant="ghost"
-										size="icon"
-										class="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100"
-										onclick={(e: MouseEvent) => handleDuplicate(e, project.id)}
-										title="Duplicate project"
-									>
-										<Copy class="h-3.5 w-3.5" />
-									</Button>
-									<Button
-										variant="ghost"
-										size="icon"
-										class="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
-										onclick={(e: MouseEvent) => handleDeleteClick(e, project.id, project.name)}
-										title="Delete project"
-									>
-										<Trash2 class="h-3.5 w-3.5" />
-									</Button>
+									<Tip text="Duplicate project">
+										<Button
+											variant="ghost"
+											size="icon"
+											class="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100"
+											onclick={(e: MouseEvent) => handleDuplicate(e, project.id)}
+										>
+											<Copy class="h-3.5 w-3.5" />
+										</Button>
+									</Tip>
+									<Tip text="Delete project">
+										<Button
+											variant="ghost"
+											size="icon"
+											class="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
+											onclick={(e: MouseEvent) => handleDeleteClick(e, project.id, project.name)}
+										>
+											<Trash2 class="h-3.5 w-3.5" />
+										</Button>
+									</Tip>
 									<ChevronRight class="h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
 								</div>
 							</div>

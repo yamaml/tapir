@@ -5,6 +5,7 @@
 	import Check from 'lucide-svelte/icons/check';
 	import Lock from 'lucide-svelte/icons/lock';
 	import GripVertical from 'lucide-svelte/icons/grip-vertical';
+	import Tip from '$lib/components/ui/tip.svelte';
 
 	interface Props {
 		description: Description;
@@ -77,15 +78,16 @@
 						<Check class="h-3 w-3" />
 					</button>
 				{:else}
-					<span
-						class="text-xs font-medium text-foreground truncate"
-						title={isMainLocked ? 'MAIN is required as the first block ID (SimpleDSP spec)' : 'Double-click to rename'}
-					>
-						{description.label || description.name}
-						{#if isMainLocked}
-							<Lock class="inline h-2.5 w-2.5 text-muted-foreground ml-0.5 [&]:pointer-events-none" />
-						{/if}
-					</span>
+					<Tip text={isMainLocked ? 'MAIN is required as the first block ID (SimpleDSP spec)' : 'Double-click to rename'}>
+						<span
+							class="text-xs font-medium text-foreground truncate"
+						>
+							{description.label || description.name}
+							{#if isMainLocked}
+								<Lock class="inline h-2.5 w-2.5 text-muted-foreground ml-0.5 [&]:pointer-events-none" />
+							{/if}
+						</span>
+					</Tip>
 					<Badge variant="secondary" class="shrink-0 text-[9px] px-1 py-0 h-3.5 font-normal tabular-nums">
 						{description.statements.length}
 					</Badge>

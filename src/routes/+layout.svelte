@@ -9,6 +9,7 @@
 	import Moon from 'lucide-svelte/icons/moon';
 	import { Separator } from '$lib/components/ui/separator';
 	import PwaUpdateToast from '$lib/components/pwa-update-toast.svelte';
+	import Tip from '$lib/components/ui/tip.svelte';
 
 	let { children } = $props();
 
@@ -66,17 +67,19 @@
 			<div class="flex-1"></div>
 			<nav class="flex items-center gap-1">
 				<!-- Theme toggle -->
-				<button
-					onclick={() => theme.toggle()}
-					class="inline-flex items-center justify-center rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors [&_svg]:pointer-events-none"
-					title="Toggle {$theme === 'light' ? 'dark' : 'light'} mode"
-				>
-					{#if $theme === 'light'}
-						<Moon class="h-4 w-4" />
-					{:else}
-						<Sun class="h-4 w-4" />
-					{/if}
-				</button>
+				<Tip text="Toggle {$theme === 'light' ? 'dark' : 'light'} mode">
+					<button
+						onclick={() => theme.toggle()}
+						class="inline-flex items-center justify-center rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors [&_svg]:pointer-events-none"
+						aria-label="Toggle {$theme === 'light' ? 'dark' : 'light'} mode"
+					>
+						{#if $theme === 'light'}
+							<Moon class="h-4 w-4" />
+						{:else}
+							<Sun class="h-4 w-4" />
+						{/if}
+					</button>
+				</Tip>
 				<a
 					href="{base}/"
 					class="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
@@ -118,12 +121,12 @@
 				DCTAP
 			</a>
 			<Separator orientation="vertical" class="!h-3" />
+			<Tip text="Tapir source on GitHub" side="top">
 			<a
 				href="https://github.com/yamaml/tapir"
 				target="_blank"
 				rel="noopener noreferrer"
 				class="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors [&_svg]:pointer-events-none"
-				title="Tapir source on GitHub"
 				aria-label="Tapir on GitHub"
 			>
 				<!--
@@ -143,6 +146,7 @@
 				</svg>
 				GitHub
 			</a>
+			</Tip>
 		</div>
 	</footer>
 

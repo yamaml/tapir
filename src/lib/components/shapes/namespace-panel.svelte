@@ -9,6 +9,7 @@
 	import Trash2 from 'lucide-svelte/icons/trash-2';
 	import X from 'lucide-svelte/icons/x';
 	import Check from 'lucide-svelte/icons/check';
+	import Tip from '$lib/components/ui/tip.svelte';
 
 	interface Props {
 		namespaces: NamespaceMap;
@@ -404,22 +405,26 @@
 					<div class="group flex items-baseline gap-1.5 text-[11px]">
 						<span class="font-mono font-medium text-foreground shrink-0">{prefix}:</span>
 						<span class="text-muted-foreground font-mono truncate flex-1" title={uri}>{truncateUri(uri)}</span>
-						<button
-							type="button"
-							class="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity shrink-0 [&_svg]:pointer-events-none"
-							onclick={() => startEditNamespace(prefix, uri)}
-							title="Edit namespace"
-						>
-							<Pencil class="h-2.5 w-2.5" />
-						</button>
-						<button
-							type="button"
-							class="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity shrink-0 [&_svg]:pointer-events-none"
-							onclick={() => handleRemoveNamespace(prefix)}
-							title="Remove namespace"
-						>
-							<Trash2 class="h-2.5 w-2.5" />
-						</button>
+						<Tip text="Edit namespace">
+							<button
+								type="button"
+								class="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity shrink-0 [&_svg]:pointer-events-none"
+								onclick={() => startEditNamespace(prefix, uri)}
+								aria-label="Edit namespace"
+							>
+								<Pencil class="h-2.5 w-2.5" />
+							</button>
+						</Tip>
+						<Tip text="Remove namespace">
+							<button
+								type="button"
+								class="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity shrink-0 [&_svg]:pointer-events-none"
+								onclick={() => handleRemoveNamespace(prefix)}
+								aria-label="Remove namespace"
+							>
+								<Trash2 class="h-2.5 w-2.5" />
+							</button>
+						</Tip>
 					</div>
 				{/if}
 			{/each}
@@ -440,14 +445,15 @@
 					<p class="text-[9px] uppercase tracking-wider text-amber-600 dark:text-amber-400 font-semibold">Used in profile, undeclared</p>
 					<div class="flex flex-wrap gap-1">
 						{#each undeclaredInProfilePrefixes as p}
-							<button
-								type="button"
-								class="px-1.5 py-0.5 rounded border border-amber-600/60 bg-amber-500 text-white text-[10px] font-mono font-medium shadow-sm hover:bg-amber-600 transition-colors"
-								onclick={() => quickFillPrefix(p)}
-								title="Click to use this prefix; type the namespace URI below"
-							>
-								{p}:
-							</button>
+							<Tip text="Click to use this prefix; type the namespace URI below">
+								<button
+									type="button"
+									class="px-1.5 py-0.5 rounded border border-amber-600/60 bg-amber-500 text-white text-[10px] font-mono font-medium shadow-sm hover:bg-amber-600 transition-colors"
+									onclick={() => quickFillPrefix(p)}
+								>
+									{p}:
+								</button>
+							</Tip>
 						{/each}
 					</div>
 				</div>
@@ -458,14 +464,15 @@
 					<p class="text-[9px] uppercase tracking-wider text-muted-foreground font-semibold">Common vocabularies</p>
 					<div class="flex flex-wrap gap-1 mb-2">
 						{#each availablePrefixes.slice(0, 6) as p}
-							<button
-								type="button"
-								class="px-1.5 py-0.5 rounded bg-accent text-accent-foreground text-[10px] font-mono font-medium hover:bg-primary hover:text-primary-foreground transition-colors"
-								onclick={() => handleQuickAdd(p.prefix, p.uri)}
-								title="Add {p.prefix}: {p.uri}"
-							>
-								{p.prefix}:
-							</button>
+							<Tip text="Add {p.prefix}: {p.uri}">
+								<button
+									type="button"
+									class="px-1.5 py-0.5 rounded bg-accent text-accent-foreground text-[10px] font-mono font-medium hover:bg-primary hover:text-primary-foreground transition-colors"
+									onclick={() => handleQuickAdd(p.prefix, p.uri)}
+								>
+									{p.prefix}:
+								</button>
+							</Tip>
 						{/each}
 					</div>
 				</div>

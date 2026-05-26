@@ -36,6 +36,7 @@
 	import Link from 'lucide-svelte/icons/link';
 	import Loader from 'lucide-svelte/icons/loader-circle';
 	import AlertTriangle from 'lucide-svelte/icons/triangle-alert';
+	import Tip from '$lib/components/ui/tip.svelte';
 
 	interface Props {
 		open: boolean;
@@ -513,14 +514,16 @@
 									</div>
 								{/if}
 							</div>
-							<button
-								type="button"
-								class="text-muted-foreground hover:text-destructive transition-colors [&_svg]:pointer-events-none"
-								onclick={clearImport}
-								title="Remove file"
-							>
-								<X class="h-4 w-4" />
-							</button>
+							<Tip text="Remove file">
+								<button
+									type="button"
+									class="text-muted-foreground hover:text-destructive transition-colors [&_svg]:pointer-events-none"
+									onclick={clearImport}
+									aria-label="Remove file"
+								>
+									<X class="h-4 w-4" />
+								</button>
+							</Tip>
 						</div>
 					{:else}
 						<label
@@ -596,14 +599,16 @@
 									</div>
 								{/if}
 							</div>
-							<button
-								type="button"
-								class="text-muted-foreground hover:text-destructive transition-colors [&_svg]:pointer-events-none"
-								onclick={clearImport}
-								title="Remove import"
-							>
-								<X class="h-4 w-4" />
-							</button>
+							<Tip text="Remove import">
+								<button
+									type="button"
+									class="text-muted-foreground hover:text-destructive transition-colors [&_svg]:pointer-events-none"
+									onclick={clearImport}
+									aria-label="Remove import"
+								>
+									<X class="h-4 w-4" />
+								</button>
+							</Tip>
 						</div>
 					{/if}
 				{/if}
@@ -722,14 +727,15 @@
 				{#if availableCommon.length > 0}
 					<div class="flex flex-wrap gap-1.5">
 						{#each availableCommon as c}
-							<button
-								type="button"
-								class="text-xs px-2 py-1 rounded-md border border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors [&_svg]:pointer-events-none"
-								onclick={() => handleQuickAdd(c.prefix, c.uri)}
-								title={c.uri}
-							>
-								<Plus class="inline h-3 w-3 mr-0.5" />{c.prefix}
-							</button>
+							<Tip text={c.uri}>
+								<button
+									type="button"
+									class="text-xs px-2 py-1 rounded-md border border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors [&_svg]:pointer-events-none"
+									onclick={() => handleQuickAdd(c.prefix, c.uri)}
+								>
+									<Plus class="inline h-3 w-3 mr-0.5" />{c.prefix}
+								</button>
+							</Tip>
 						{/each}
 					</div>
 				{/if}

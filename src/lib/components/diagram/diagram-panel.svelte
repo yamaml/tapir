@@ -26,6 +26,7 @@
 	import ELK from 'elkjs/lib/elk.bundled.js';
 	import { Popover, PopoverContent, PopoverTrigger } from '$lib/components/ui/popover';
 	import { Separator } from '$lib/components/ui/separator';
+	import Tip from '$lib/components/ui/tip.svelte';
 	import Download from 'lucide-svelte/icons/download';
 	import FileCode2 from 'lucide-svelte/icons/file-code-2';
 	import FileText from 'lucide-svelte/icons/file-text';
@@ -941,14 +942,16 @@
 			<!-- Zoom controls (only in expanded/full-screen view) -->
 			{#if expanded}
 				<div class="flex items-center gap-1 border-r border-border pr-2 mr-1">
-					<button
-						onclick={zoomOut}
-						class="rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground [&_svg]:pointer-events-none disabled:opacity-40"
-						disabled={zoom <= 0.25}
-						title="Zoom out (wheel down)"
-					>
-						<ZoomOut class="h-3.5 w-3.5" />
-					</button>
+					<Tip text="Zoom out (or scroll wheel down)">
+						<button
+							onclick={zoomOut}
+							class="rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground [&_svg]:pointer-events-none disabled:opacity-40"
+							disabled={zoom <= 0.25}
+							aria-label="Zoom out"
+						>
+							<ZoomOut class="h-3.5 w-3.5" />
+						</button>
+					</Tip>
 					<input
 						type="range"
 						min="0.25"
@@ -959,21 +962,25 @@
 						class="h-1 w-32 cursor-pointer accent-primary"
 						title="Zoom: {Math.round(zoom * 100)}%"
 					/>
-					<button
-						onclick={zoomIn}
-						class="rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground [&_svg]:pointer-events-none disabled:opacity-40"
-						disabled={zoom >= 4}
-						title="Zoom in (wheel up)"
-					>
-						<ZoomIn class="h-3.5 w-3.5" />
-					</button>
-					<button
-						onclick={resetView}
-						class="rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground [&_svg]:pointer-events-none"
-						title="Reset zoom and pan"
-					>
-						<Locate class="h-3.5 w-3.5" />
-					</button>
+					<Tip text="Zoom in (or scroll wheel up)">
+						<button
+							onclick={zoomIn}
+							class="rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground [&_svg]:pointer-events-none disabled:opacity-40"
+							disabled={zoom >= 4}
+							aria-label="Zoom in"
+						>
+							<ZoomIn class="h-3.5 w-3.5" />
+						</button>
+					</Tip>
+					<Tip text="Reset zoom and pan">
+						<button
+							onclick={resetView}
+							class="rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground [&_svg]:pointer-events-none"
+							aria-label="Reset view"
+						>
+							<Locate class="h-3.5 w-3.5" />
+						</button>
+					</Tip>
 					<span class="text-[10px] text-muted-foreground tabular-nums w-10 text-right">
 						{Math.round(zoom * 100)}%
 					</span>
@@ -981,22 +988,24 @@
 			{/if}
 
 			<!-- Expand/collapse -->
-			<button
-				onclick={() => {
-					expanded = !expanded;
-					// Reset zoom/pan when leaving expanded mode so
-					// collapsing always shows the full fit view.
-					if (!expanded) resetView();
-				}}
-				class="rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground [&_svg]:pointer-events-none"
-				title={expanded ? 'Minimize' : 'Maximize'}
-			>
-				{#if expanded}
-					<Minimize2 class="h-3.5 w-3.5" />
-				{:else}
-					<Maximize2 class="h-3.5 w-3.5" />
-				{/if}
-			</button>
+			<Tip text={expanded ? 'Minimise' : 'Maximise diagram'}>
+				<button
+					onclick={() => {
+						expanded = !expanded;
+						// Reset zoom/pan when leaving expanded mode so
+						// collapsing always shows the full fit view.
+						if (!expanded) resetView();
+					}}
+					class="rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground [&_svg]:pointer-events-none"
+					aria-label={expanded ? 'Minimise diagram' : 'Maximise diagram'}
+				>
+					{#if expanded}
+						<Minimize2 class="h-3.5 w-3.5" />
+					{:else}
+						<Maximize2 class="h-3.5 w-3.5" />
+					{/if}
+				</button>
+			</Tip>
 		</div>
 	</div>
 
