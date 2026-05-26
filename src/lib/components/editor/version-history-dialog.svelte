@@ -10,6 +10,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Badge } from '$lib/components/ui/badge';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
+	import Tip from '$lib/components/ui/tip.svelte';
 	import { Separator } from '$lib/components/ui/separator';
 	import Bookmark from 'lucide-svelte/icons/bookmark';
 	import Clock from 'lucide-svelte/icons/clock';
@@ -215,24 +216,26 @@
 											<Button size="sm" variant="ghost" class="h-5 px-1.5 text-[10px]" onclick={() => (confirmRestoreId = null)}>No</Button>
 										</div>
 									{:else}
-										<Button
-											variant="ghost"
-											size="icon"
-											class="h-6 w-6 text-muted-foreground hover:text-foreground"
-											onclick={() => (confirmRestoreId = snapshot.id ?? null)}
-											title="Restore this version"
-										>
-											<RotateCcw class="h-3 w-3" />
-										</Button>
-										<Button
-											variant="ghost"
-											size="icon"
-											class="h-6 w-6 text-muted-foreground hover:text-destructive"
-											onclick={() => { if (snapshot.id != null) handleDelete(snapshot.id); }}
-											title="Delete this version"
-										>
-											<Trash2 class="h-3 w-3" />
-										</Button>
+										<Tip text="Restore this version">
+											<Button
+												variant="ghost"
+												size="icon"
+												class="h-6 w-6 text-muted-foreground hover:text-foreground"
+												onclick={() => (confirmRestoreId = snapshot.id ?? null)}
+											>
+												<RotateCcw class="h-3 w-3" />
+											</Button>
+										</Tip>
+										<Tip text="Delete this version">
+											<Button
+												variant="ghost"
+												size="icon"
+												class="h-6 w-6 text-muted-foreground hover:text-destructive"
+												onclick={() => { if (snapshot.id != null) handleDelete(snapshot.id); }}
+											>
+												<Trash2 class="h-3 w-3" />
+											</Button>
+										</Tip>
 									{/if}
 								</div>
 							</div>

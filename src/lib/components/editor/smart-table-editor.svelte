@@ -13,6 +13,7 @@
 	import ConstraintEditor from '$lib/components/editor/constraint-editor.svelte';
 	import ShapeRefPicker from '$lib/components/editor/shape-ref-picker.svelte';
 	import DatatypePicker from '$lib/components/editor/datatype-picker.svelte';
+	import Tip from '$lib/components/ui/tip.svelte';
 
 	const DATATYPE_OPTIONS = [
 		'xsd:string',
@@ -393,22 +394,28 @@
 							{#if col.field === 'actions'}
 								<td class="px-1 py-1">
 									<div class="flex items-center gap-0.5">
-										<Button
-											variant="ghost"
-											size="icon"
-											class="h-6 w-6 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground transition-opacity"
-											onclick={() => duplicateStatement(description.id, stmt.id)}
-										>
-											<Copy class="h-3 w-3" />
-										</Button>
-										<Button
-											variant="ghost"
-											size="icon"
-											class="h-6 w-6 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity"
-											onclick={() => removeStatement(description.id, stmt.id)}
-										>
-											<Trash2 class="h-3 w-3" />
-										</Button>
+										<Tip text="Duplicate statement">
+											<Button
+												variant="ghost"
+												size="icon"
+												class="h-6 w-6 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground transition-opacity"
+												onclick={() => duplicateStatement(description.id, stmt.id)}
+												aria-label="Duplicate statement"
+											>
+												<Copy class="h-3 w-3" />
+											</Button>
+										</Tip>
+										<Tip text="Delete statement">
+											<Button
+												variant="ghost"
+												size="icon"
+												class="h-6 w-6 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity"
+												onclick={() => removeStatement(description.id, stmt.id)}
+												aria-label="Delete statement"
+											>
+												<Trash2 class="h-3 w-3" />
+											</Button>
+										</Tip>
 									</div>
 								</td>
 							{:else if col.field === 'shapeRefs'}

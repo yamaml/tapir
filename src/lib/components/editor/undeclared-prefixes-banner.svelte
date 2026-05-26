@@ -17,6 +17,7 @@
 	import AlertTriangle from 'lucide-svelte/icons/triangle-alert';
 	import X from 'lucide-svelte/icons/x';
 	import Check from 'lucide-svelte/icons/check';
+	import Tip from '$lib/components/ui/tip.svelte';
 
 	interface Props {
 		project: TapirProject;
@@ -153,15 +154,16 @@
 
 			<div class="flex flex-wrap items-center gap-1.5">
 				{#if knownUndeclared.length > 1}
-					<button
-						type="button"
-						onclick={declareAll}
-						class="inline-flex items-center gap-1 rounded border border-primary/40 bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/20 transition-colors [&_svg]:pointer-events-none"
-						title="Add canonical namespaces for every prefix marked KNOWN"
-					>
-						<Check class="h-3 w-3" />
-						Declare all known ({knownUndeclared.length})
-					</button>
+					<Tip text="Add canonical namespaces for every prefix marked KNOWN">
+						<button
+							type="button"
+							onclick={declareAll}
+							class="inline-flex items-center gap-1 rounded border border-primary/40 bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/20 transition-colors [&_svg]:pointer-events-none"
+						>
+							<Check class="h-3 w-3" />
+							Declare all known ({knownUndeclared.length})
+						</button>
+					</Tip>
 				{/if}
 				{#each undeclaredPrefixes as prefix}
 					{#if editingPrefix === prefix}
@@ -194,32 +196,34 @@
 							</button>
 						</div>
 					{:else}
-						<button
-							type="button"
-							onclick={() => startDeclare(prefix)}
-							class="inline-flex items-center gap-1 rounded border border-amber-600/60 bg-amber-500 px-2 py-0.5 font-mono text-[11px] font-medium text-white shadow-sm hover:bg-amber-600 transition-colors"
-							title={manifestByPrefix.has(prefix)
-								? `Click to add ${prefix}: — URI will be pre-filled from the known vocabulary`
-								: `Click to add a namespace for ${prefix}:`}
-						>
-							<span>{prefix}:</span>
-							{#if manifestByPrefix.has(prefix)}
-								<span class="rounded bg-white/25 px-1 text-[9px] uppercase tracking-wider">known</span>
-							{/if}
-						</button>
+						<Tip text={manifestByPrefix.has(prefix)
+							? `Click to add ${prefix}: — URI will be pre-filled from the known vocabulary`
+							: `Click to add a namespace for ${prefix}:`}>
+							<button
+								type="button"
+								onclick={() => startDeclare(prefix)}
+								class="inline-flex items-center gap-1 rounded border border-amber-600/60 bg-amber-500 px-2 py-0.5 font-mono text-[11px] font-medium text-white shadow-sm hover:bg-amber-600 transition-colors"
+							>
+								<span>{prefix}:</span>
+								{#if manifestByPrefix.has(prefix)}
+									<span class="rounded bg-white/25 px-1 text-[9px] uppercase tracking-wider">known</span>
+								{/if}
+							</button>
+						</Tip>
 					{/if}
 				{/each}
 			</div>
 		</div>
 
-		<button
-			type="button"
-			class="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors [&_svg]:pointer-events-none"
-			onclick={() => (dismissed = true)}
-			aria-label="Dismiss"
-			title="Dismiss for this session"
-		>
-			<X class="h-3.5 w-3.5" />
-		</button>
+		<Tip text="Dismiss for this session">
+			<button
+				type="button"
+				class="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors [&_svg]:pointer-events-none"
+				onclick={() => (dismissed = true)}
+				aria-label="Dismiss"
+			>
+				<X class="h-3.5 w-3.5" />
+			</button>
+		</Tip>
 	</div>
 {/if}

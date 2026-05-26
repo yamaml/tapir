@@ -11,6 +11,7 @@
 	import { projectNameExists } from '$lib/db';
 	import { Badge } from '$lib/components/ui/badge';
 	import Pencil from 'lucide-svelte/icons/pencil';
+	import Tip from '$lib/components/ui/tip.svelte';
 
 	interface Props {
 		projectName: string;
@@ -110,15 +111,16 @@
 				{/if}
 			</div>
 		{:else}
-			<button
-				type="button"
-				onclick={startEditName}
-				title="Click to rename"
-				class="group inline-flex items-center gap-1 text-sm font-medium text-foreground truncate max-w-[260px] rounded px-0.5 hover:bg-muted transition-colors [&_svg]:pointer-events-none"
-			>
-				<span class="truncate">{projectName}</span>
-				<Pencil class="h-3 w-3 text-muted-foreground/0 group-hover:text-muted-foreground transition-colors shrink-0" />
-			</button>
+			<Tip text="Click to rename">
+				<button
+					type="button"
+					onclick={startEditName}
+					class="group inline-flex items-center gap-1 text-sm font-medium text-foreground truncate max-w-[260px] rounded px-0.5 hover:bg-muted transition-colors [&_svg]:pointer-events-none"
+				>
+					<span class="truncate">{projectName}</span>
+					<Pencil class="h-3 w-3 text-muted-foreground/0 group-hover:text-muted-foreground transition-colors shrink-0" />
+				</button>
+			</Tip>
 		{/if}
 
 		<Badge variant="outline" class="text-[10px] px-1.5 py-0 h-4 font-normal shrink-0">{flavorLabel}</Badge>
@@ -137,15 +139,16 @@
 				autofocus
 			/>
 		{:else if projectDescription}
-			<button
-				type="button"
-				onclick={startEditDescription}
-				title="Click to edit description"
-				class="group inline-flex items-center gap-1 text-[11px] text-muted-foreground truncate max-w-[480px] rounded px-0.5 hover:bg-muted hover:text-foreground transition-colors [&_svg]:pointer-events-none"
-			>
-				<span class="truncate">{projectDescription}</span>
-				<Pencil class="h-2.5 w-2.5 text-muted-foreground/0 group-hover:text-muted-foreground transition-colors shrink-0" />
-			</button>
+			<Tip text="Click to edit description">
+				<button
+					type="button"
+					onclick={startEditDescription}
+					class="group inline-flex items-center gap-1 text-[11px] text-muted-foreground truncate max-w-[480px] rounded px-0.5 hover:bg-muted hover:text-foreground transition-colors [&_svg]:pointer-events-none"
+				>
+					<span class="truncate">{projectDescription}</span>
+					<Pencil class="h-2.5 w-2.5 text-muted-foreground/0 group-hover:text-muted-foreground transition-colors shrink-0" />
+				</button>
+			</Tip>
 		{:else}
 			<button
 				type="button"

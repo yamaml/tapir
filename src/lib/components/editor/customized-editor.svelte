@@ -12,6 +12,7 @@
 	import ConstraintEditor from '$lib/components/editor/constraint-editor.svelte';
 	import ShapeRefPicker from '$lib/components/editor/shape-ref-picker.svelte';
 	import DatatypePicker from '$lib/components/editor/datatype-picker.svelte';
+	import Tip from '$lib/components/ui/tip.svelte';
 	import { validateField } from '$lib/utils/validation';
 	import type { FieldValidationContext, ValidatableField } from '$lib/utils/validation';
 	import FieldError from '$lib/components/editor/field-error.svelte';
@@ -361,22 +362,28 @@
 						<Badge variant="outline" class="text-[10px] px-1.5 py-0 h-5 font-mono">
 							{getCardinalityRange(stmt)}
 						</Badge>
-						<Button
-							variant="ghost"
-							size="icon"
-							class="h-6 w-6 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground transition-opacity"
-							onclick={() => duplicateStatement(description.id, stmt.id)}
-						>
-							<Copy class="h-3.5 w-3.5" />
-						</Button>
-						<Button
-							variant="ghost"
-							size="icon"
-							class="h-6 w-6 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity"
-							onclick={() => handleRemoveStatement(stmt.id)}
-						>
-							<Trash2 class="h-3.5 w-3.5" />
-						</Button>
+						<Tip text="Duplicate statement">
+							<Button
+								variant="ghost"
+								size="icon"
+								class="h-6 w-6 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground transition-opacity"
+								onclick={() => duplicateStatement(description.id, stmt.id)}
+								aria-label="Duplicate statement"
+							>
+								<Copy class="h-3.5 w-3.5" />
+							</Button>
+						</Tip>
+						<Tip text="Delete statement">
+							<Button
+								variant="ghost"
+								size="icon"
+								class="h-6 w-6 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity"
+								onclick={() => handleRemoveStatement(stmt.id)}
+								aria-label="Delete statement"
+							>
+								<Trash2 class="h-3.5 w-3.5" />
+							</Button>
+						</Tip>
 					</div>
 				</div>
 			</CardHeader>
