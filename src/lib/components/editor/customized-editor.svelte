@@ -13,6 +13,7 @@
 	import ShapeRefPicker from '$lib/components/editor/shape-ref-picker.svelte';
 	import DatatypePicker from '$lib/components/editor/datatype-picker.svelte';
 	import Tip from '$lib/components/ui/tip.svelte';
+	import FieldLabel from '$lib/components/ui/field-label.svelte';
 	import { validateField } from '$lib/utils/validation';
 	import type { FieldValidationContext, ValidatableField } from '$lib/utils/validation';
 	import FieldError from '$lib/components/editor/field-error.svelte';
@@ -232,12 +233,18 @@
 		<CardHeader class="pb-3 pt-4 px-4">
 			<div class="grid gap-3">
 				<div class="grid gap-1.5">
-					<label class="text-xs font-medium text-muted-foreground font-mono" for="desc-name">
+					<FieldLabel
+						class="text-xs font-medium text-muted-foreground font-mono"
+						for="desc-name"
+						help={flavor === 'dctap'
+							? 'Identifier for this shape — referenced by valueShape on other statements. Must be unique within the profile.'
+							: 'Identifier for this description template — referenced by #blockId on other statements. Must be unique within the file.'}
+					>
 						{flavor === 'dctap' ? 'shapeID' : 'Name'}
 						{#if nameReadonly}
 							<span class="text-[10px] text-muted-foreground ml-1 font-sans">(fixed per SimpleDSP spec)</span>
 						{/if}
-					</label>
+					</FieldLabel>
 					<Input
 						id="desc-name"
 						bind:value={descName}
@@ -252,7 +259,12 @@
 						 DCTAP shapes don't have these: shapeID + shapeLabel are the
 						 only identifiers. -->
 					<div class="grid gap-1.5">
-						<label class="text-xs font-medium text-muted-foreground">Target Class</label>
+						<FieldLabel
+							class="text-xs font-medium text-muted-foreground"
+							help="The RDF class that records of this template instantiate (e.g. foaf:Person). Used by OWL-DSP as dsp:resourceClass."
+						>
+							Target Class
+						</FieldLabel>
 						<PropertyAutocomplete
 							value={descTargetClass}
 							type="C"
@@ -262,10 +274,13 @@
 						<FieldError message={fieldErrors.targetClass} />
 					</div>
 					<div class="grid gap-1.5">
-						<label class="text-xs font-medium text-muted-foreground">
+						<FieldLabel
+							class="text-xs font-medium text-muted-foreground"
+							help="Prefix used to build record URIs for this template (e.g. ex: makes records ex:person-001). Optional — leave empty to keep records as blank nodes."
+						>
 							ID Prefix
 							<span class="text-[10px] text-muted-foreground ml-1">(record URI namespace)</span>
-						</label>
+						</FieldLabel>
 						{#if getAvailablePrefixes().length > 0}
 							<Select
 								type="single"
@@ -297,7 +312,13 @@
 				{/if}
 				{#if flavor === 'dctap'}
 					<div class="grid gap-1.5">
-						<label class="text-xs font-medium text-muted-foreground font-mono" for="desc-label">shapeLabel</label>
+						<FieldLabel
+							class="text-xs font-medium text-muted-foreground font-mono"
+							for="desc-label"
+							help="Human-readable label for the shape. Used in generated documentation; not required by the DCTAP spec."
+						>
+							shapeLabel
+						</FieldLabel>
 						<Input
 							id="desc-label"
 							bind:value={descLabel}
@@ -308,7 +329,13 @@
 					</div>
 				{/if}
 				<div class="grid gap-1.5">
-					<label class="text-xs font-medium text-muted-foreground {flavor === 'dctap' ? 'font-mono' : ''}" for="desc-note">{flavor === 'dctap' ? 'note' : 'Note'}</label>
+					<FieldLabel
+						class="text-xs font-medium text-muted-foreground {flavor === 'dctap' ? 'font-mono' : ''}"
+						for="desc-note"
+						help="Free-text comment about the shape. Not used by validators; surfaces in generated documentation."
+					>
+						{flavor === 'dctap' ? 'note' : 'Note'}
+					</FieldLabel>
 					<textarea
 						id="desc-note"
 						bind:value={descNote}
@@ -391,12 +418,17 @@
 				<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
 					<!-- Label/Name — required for SimpleDSP (used for URI), optional for DCTAP -->
 					<div class="grid gap-1">
-						<label class={labelClass}>
+						<FieldLabel
+							class={labelClass}
+							help={flavor === 'dctap'
+								? 'Human-readable label for this statement. Not validated; surfaces in generated documentation.'
+								: 'Name for this statement. Required — used to build the statement URI.'}
+						>
 							{labels.columns.name}
 							{#if flavor === 'simpledsp'}
 								<span class="text-destructive ml-0.5">*</span>
 							{/if}
-						</label>
+						</FieldLabel>
 						<Input
 							value={stmt.label}
 							oninput={(e: Event) => handleStmtField(stmt.id, 'label', (e.target as HTMLInputElement).value)}
@@ -410,10 +442,13 @@
 					</div>
 					<!-- Property (with autocomplete) — required for both SimpleDSP and DCTAP -->
 					<div class="grid gap-1">
-						<label class={labelClass}>
+						<FieldLabel
+							class={labelClass}
+							help="The RDF property this statement constrains, written as a prefixed term (e.g. dcterms:title). Type a prefix to auto-suggest from declared vocabularies."
+						>
 							{labels.columns.property}
 							<span class="text-destructive ml-0.5">*</span>
-						</label>
+						</FieldLabel>
 						<PropertyAutocomplete
 							value={stmt.propertyId}
 							type="P"
@@ -428,7 +463,14 @@
 					</div>
 					<!-- Value Type -->
 					<div class="grid gap-1">
-						<label class={labelClass}>{labels.columns.valueType}</label>
+						<FieldLabel
+							class={labelClass}
+							help={flavor === 'dctap'
+								? 'Is the value an IRI, a literal (text/number/date), or a blank node? Determines which constraint fields are valid.'
+								: 'Is the value a literal (text/number/date), a reference (IRI), or a structured record? Determines how the Constraint cell is interpreted.'}
+						>
+							{labels.columns.valueType}
+						</FieldLabel>
 						<Select
 							type="single"
 							value={stmt.valueType}
@@ -456,9 +498,12 @@
 					-->
 					{#if stmt.valueType === 'literal'}
 						<div class="grid gap-1">
-							<label class={labelClass}>
+							<FieldLabel
+								class={labelClass}
+								help="XSD datatype the literal value must satisfy (e.g. xsd:string, xsd:date). Multiple chips express alternatives — any of them is acceptable."
+							>
 								{flavor === 'dctap' ? 'valueDataType' : 'Datatype'}
-							</label>
+							</FieldLabel>
 							<DatatypePicker
 								selected={stmt.datatype ?? []}
 								options={DATATYPE_OPTIONS}
@@ -476,7 +521,12 @@
 						 values in the valueConstraint cell"). -->
 					{#if flavor === 'dctap'}
 						<div class="grid gap-1">
-							<label class={labelClass}>valueConstraintType</label>
+							<FieldLabel
+								class={labelClass}
+								help="How to interpret the valueConstraint cell. picklist = pick from a list; pattern = match a regex; IRIstem = URI prefix; languageTag = language tag list; minLength/maxLength/minInclusive/maxInclusive = numeric facets."
+							>
+								valueConstraintType
+							</FieldLabel>
 							<Select
 								type="single"
 								value={stmt.constraintType}
@@ -502,9 +552,12 @@
 						 of the Tapir internal ValueType union — hence the cast. -->
 					{#if flavor === 'simpledsp' && (stmt.valueType as string) === 'structured'}
 						<div class="grid gap-1">
-							<label class={labelClass}>
+							<FieldLabel
+								class={labelClass}
+								help="Reference to another description template in this file (rendered as #blockId). Multiple chips express a union — yama-cli extension over the published spec."
+							>
 								Shape reference
-							</label>
+							</FieldLabel>
 							{#if getAvailableShapeRefs().length > 0}
 								<ShapeRefPicker
 									selected={stmt.shapeRefs ?? []}
@@ -520,9 +573,14 @@
 					{/if}
 					<!-- Constraint -->
 					<div class="grid gap-1">
-						<label class={labelClass}>
+						<FieldLabel
+							class={labelClass}
+							help={flavor === 'dctap'
+								? 'Additional restriction on the value, interpreted per valueConstraintType (picklist values, regex pattern, IRI stem, etc.). Empty if no extra constraint applies.'
+								: 'Additional restriction on the value. Interpretation depends on the ValueType: datatype for literal, #blockId or class for structured, vocabulary prefix or URI list for reference.'}
+						>
 							{labels.columns.constraint}
-						</label>
+						</FieldLabel>
 						<Popover.Root
 							open={constraintPopoverStmt === stmt.id}
 							onOpenChange={(open) => { constraintPopoverStmt = open ? stmt.id : null; }}
@@ -577,7 +635,12 @@
 							 space-separated, following the DCMI SRAP convention. -->
 						{#if stmt.valueType === 'iri' || stmt.valueType === 'bnode'}
 							<div class="grid gap-1">
-								<label class={labelClass}>valueShape</label>
+								<FieldLabel
+									class={labelClass}
+									help="When the value is an IRI or blank node, the shape it must conform to. Multiple chips express alternatives (Person OR Organization) — DCMI SRAP convention."
+								>
+									valueShape
+								</FieldLabel>
 								{#if getAvailableShapeRefs().length > 0}
 									<ShapeRefPicker
 										selected={stmt.shapeRefs ?? []}
@@ -592,7 +655,14 @@
 					{/if}
 					<!-- Min / mandatory -->
 					<div class="grid gap-1">
-						<label class={labelClass}>{labels.columns.min}</label>
+						<FieldLabel
+							class={labelClass}
+							help={flavor === 'dctap'
+								? 'TRUE if the statement is required (min cardinality ≥ 1); FALSE if optional.'
+								: 'Minimum cardinality. 0 = optional, 1 = required, n = at least n values.'}
+						>
+							{labels.columns.min}
+						</FieldLabel>
 						{#if flavor === 'dctap'}
 							<select
 								value={stmt.min != null && stmt.min >= 1 ? 'TRUE' : stmt.min != null ? 'FALSE' : ''}
@@ -623,7 +693,14 @@
 					</div>
 					<!-- Max / repeatable -->
 					<div class="grid gap-1">
-						<label class={labelClass}>{labels.columns.max}</label>
+						<FieldLabel
+							class={labelClass}
+							help={flavor === 'dctap'
+								? 'TRUE if the value can appear multiple times; FALSE if at most one.'
+								: 'Maximum cardinality. 1 = at most one, n = up to n, dash (-) = unbounded.'}
+						>
+							{labels.columns.max}
+						</FieldLabel>
 						{#if flavor === 'dctap'}
 							<select
 								value={stmt.max == null ? 'TRUE' : stmt.max > 1 ? 'TRUE' : 'FALSE'}
@@ -654,7 +731,12 @@
 					</div>
 					<!-- Note -->
 					<div class="grid gap-1 col-span-2 sm:col-span-1">
-						<label class={labelClass}>{labels.columns.note}</label>
+						<FieldLabel
+							class={labelClass}
+							help="Free-text comment about this statement. Not validated; surfaces in generated documentation and the SimpleDSP Comment column."
+						>
+							{labels.columns.note}
+						</FieldLabel>
 						<Input
 							value={stmt.note}
 							oninput={(e: Event) => handleStmtField(stmt.id, 'note', (e.target as HTMLInputElement).value)}
