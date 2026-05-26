@@ -8,7 +8,84 @@
 	import CircleAlert from 'lucide-svelte/icons/circle-alert';
 	import TriangleAlert from 'lucide-svelte/icons/triangle-alert';
 	import CircleCheck from 'lucide-svelte/icons/circle-check';
+	import HelpCircle from 'lucide-svelte/icons/circle-help';
 	import X from 'lucide-svelte/icons/x';
+	import Tip from '$lib/components/ui/tip.svelte';
+
+	/**
+	 * Maps a validation message to a one-line rule explanation suitable
+	 * for a tooltip. Pattern-matches on stable phrasing produced by
+	 * `validateProject` / `validateStatementVocab` — adding a new rule
+	 * requires an entry here, otherwise the row stays untooltipped (no
+	 * regression for unknown messages).
+	 *
+	 * Intentional design choice: we do **not** hard-code rule codes in
+	 * the validator's emission path. Tying tooltips to message prefixes
+	 * keeps the validator small and lets us evolve copy here.
+	 */
+	function ruleHelp(message: string): string | undefined {
+		if (message.startsWith('Unknown prefix ')) {
+			return 'The prefix used in this term is not declared in the project namespaces. Add it via the undeclared-prefixes banner or the Namespaces panel.';
+		}
+		if (message.startsWith('Invalid cardinality: min')) {
+			return 'A statement cannot require more occurrences than it allows. Lower min or raise max.';
+		}
+		if (message.startsWith('Min must be')) {
+			return 'Cardinality must be a non-negative integer. Use 0 for "optional" or 1 for "required".';
+		}
+		if (message.startsWith('Max must be')) {
+			return 'Cardinality must be a non-negative integer. Leave Max blank for "unbounded".';
+		}
+		if (message.includes('does not match any')) {
+			return 'The referenced shape name is not defined in this profile. Add a description template with that name, or correct the reference.';
+		}
+		if (message.includes('declares an ID prefix but has no target class')) {
+			return 'An ID prefix only makes sense alongside a target class — together they define the URI shape of records.';
+		}
+		if (message.includes('ID prefix') && message.includes('is not declared')) {
+			return 'The ID prefix needs a matching namespace declaration so the converters can expand record URIs.';
+		}
+		if (message.startsWith('Duplicate ')) {
+			return 'Names must be unique within a profile. Rename one of the duplicates.';
+		}
+		if (message.includes('should not carry a datatype')) {
+			return 'IRI references identify entities, not literal values, so a datatype constraint has no meaning here.';
+		}
+		if (message.includes('should not carry a') && message.includes('reference')) {
+			return 'Literal values cannot reference shape templates. Switch the value type to a structured/IRI form, or drop the reference.';
+		}
+		if (message.includes('both a') && message.includes('reference and a class constraint')) {
+			return 'Pick one: a shape reference constrains the value to a defined template; a class constraint requires only class membership. Both together is ambiguous.';
+		}
+		if (message.includes('DCTAP statement with a constraint should declare a valueNodeType')) {
+			return 'When a constraint is given, the value node type tells consumers how to interpret it (literal vs IRI vs bnode).';
+		}
+		if (message.includes('has no statements')) {
+			return 'A shape with no statements imposes no constraints — usually a sign of an unfinished template. Add at least one statement, or delete the shape.';
+		}
+		if (message.includes('has no property ID')) {
+			return 'Every statement must constrain a specific RDF property. Set the propertyID field.';
+		}
+		if (message.includes('has no name')) {
+			return 'Every shape needs an identifier so other statements can reference it.';
+		}
+		if (message.includes('Profile has no')) {
+			return 'A profile must have at least one description template to be meaningful.';
+		}
+		if (message.includes('SimpleDSP profile must open with a [MAIN] block')) {
+			return 'SimpleDSP requires the first block to be named [MAIN] — it is the entry point for records.';
+		}
+		if (message.includes('range is') && message.includes('but datatype is')) {
+			return 'The property\'s declared range (from its vocabulary) and the datatype on this statement disagree. Either adjust the datatype or use a property whose range covers it.';
+		}
+		if (message.startsWith('Property') && message.includes('expects a literal')) {
+			return 'The property\'s declared range is a literal type, but the statement is set to IRI. Switch the value type to literal.';
+		}
+		if (message.startsWith('Property') && message.includes('expects')) {
+			return 'The property\'s declared range from its vocabulary differs from how the statement is configured. Reconcile the value type with the property\'s range.';
+		}
+		return undefined;
+	}
 
 	interface Props {
 		project: TapirProject;
@@ -91,37 +168,61 @@
 				{/if}
 
 				{#each result.errors as err}
-					<button
-						type="button"
-						class="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent"
-						onclick={() => navigateTo(err.field)}
-					>
+					{@const help = ruleHelp(err.message)}
+					<div class="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-accent">
 						<CircleAlert class="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
-						<div class="min-w-0">
+						<button
+							type="button"
+							class="flex-1 min-w-0 text-left"
+							onclick={() => navigateTo(err.field)}
+						>
 							{#if err.field}
 								<span class="font-mono text-[10px] text-muted-foreground">{err.field}</span>
 								<span class="mx-1 text-muted-foreground/50">&mdash;</span>
 							{/if}
 							<span class="text-foreground">{err.message}</span>
-						</div>
-					</button>
+						</button>
+						{#if help}
+							<Tip text={help}>
+								<button
+									type="button"
+									class="mt-0.5 shrink-0 text-muted-foreground/50 hover:text-muted-foreground focus-visible:text-muted-foreground transition-colors [&_svg]:pointer-events-none"
+									aria-label="Help"
+								>
+									<HelpCircle class="h-3.5 w-3.5" />
+								</button>
+							</Tip>
+						{/if}
+					</div>
 				{/each}
 
 				{#each result.warnings as warn}
-					<button
-						type="button"
-						class="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent"
-						onclick={() => navigateTo(warn.field)}
-					>
+					{@const help = ruleHelp(warn.message)}
+					<div class="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-accent">
 						<TriangleAlert class="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
-						<div class="min-w-0">
+						<button
+							type="button"
+							class="flex-1 min-w-0 text-left"
+							onclick={() => navigateTo(warn.field)}
+						>
 							{#if warn.field}
 								<span class="font-mono text-[10px] text-muted-foreground">{warn.field}</span>
 								<span class="mx-1 text-muted-foreground/50">&mdash;</span>
 							{/if}
 							<span class="text-foreground">{warn.message}</span>
-						</div>
-					</button>
+						</button>
+						{#if help}
+							<Tip text={help}>
+								<button
+									type="button"
+									class="mt-0.5 shrink-0 text-muted-foreground/50 hover:text-muted-foreground focus-visible:text-muted-foreground transition-colors [&_svg]:pointer-events-none"
+									aria-label="Help"
+								>
+									<HelpCircle class="h-3.5 w-3.5" />
+								</button>
+							</Tip>
+						{/if}
+					</div>
 				{/each}
 			</div>
 		</ScrollArea>
