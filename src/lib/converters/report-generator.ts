@@ -359,9 +359,22 @@ export function generateHtmlReport(project: TapirProject, svgDiagram?: string): 
 					constraintCell = '';
 				}
 
-				// Type cell: if it contains a colon, link to its expanded IRI
+				// Type cell. When `stmt.datatype` holds multiple datatypes
+				// (DCMI SRAP / SimpleDSP union semantics), render each one
+				// as its own link — joining the CURIEs into a single href
+				// would produce a malformed IRI containing a literal space.
 				let typeCell: string;
-				if (type && type.includes(':')) {
+				const stmtDts = stmt.datatype ?? [];
+				if (stmtDts.length > 0) {
+					typeCell = stmtDts
+						.map((dt) => {
+							const dtIri = expandPrefixed(dt, allNs, base);
+							return dtIri
+								? `<a href="${escHtml(dtIri)}"><code>${escHtml(dt)}</code></a>`
+								: `<code>${escHtml(dt)}</code>`;
+						})
+						.join(' ');
+				} else if (type && type.includes(':')) {
 					const typeIri = expandPrefixed(type, allNs, base);
 					typeCell = typeIri
 						? `<a href="${escHtml(typeIri)}"><code>${escHtml(type)}</code></a>`
