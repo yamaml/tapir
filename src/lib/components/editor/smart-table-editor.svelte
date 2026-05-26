@@ -12,6 +12,24 @@
 	import * as Popover from '$lib/components/ui/popover';
 	import ConstraintEditor from '$lib/components/editor/constraint-editor.svelte';
 	import ShapeRefPicker from '$lib/components/editor/shape-ref-picker.svelte';
+	import DatatypePicker from '$lib/components/editor/datatype-picker.svelte';
+
+	const DATATYPE_OPTIONS = [
+		'xsd:string',
+		'xsd:integer',
+		'xsd:decimal',
+		'xsd:boolean',
+		'xsd:date',
+		'xsd:dateTime',
+		'xsd:time',
+		'xsd:gYear',
+		'xsd:gYearMonth',
+		'xsd:anyURI',
+		'xsd:float',
+		'xsd:double',
+		'xsd:nonNegativeInteger',
+		'rdf:langString',
+	];
 	import { statementMatchesQuery } from '$lib/utils/search-match';
 
 	import ToggleLeft from 'lucide-svelte/icons/toggle-left';
@@ -158,6 +176,9 @@
 		if (col.field === 'shapeRefs') {
 			return (stmt.shapeRefs ?? []).join(' ');
 		}
+		if (col.field === 'datatype') {
+			return (stmt.datatype ?? []).join(' ');
+		}
 		const val = stmt[col.field as keyof Statement];
 		if (val == null) return '';
 		if (typeof val === 'string') return val;
@@ -243,11 +264,21 @@
 				updateStatement(description.id, stmt.id, { shapeRefs: refs, constraint: '' });
 			} else {
 				if (flavor === 'simpledsp' && !val.startsWith('#') && stmt.valueType === 'literal') {
-					updateStatement(description.id, stmt.id, { datatype: val, constraint: '' });
+					updateStatement(description.id, stmt.id, {
+						datatype: val.split(/\s+/).filter(Boolean),
+						constraint: '',
+					});
 				} else {
 					updateStatement(description.id, stmt.id, { constraint: val });
 				}
 			}
+		} else if (col.field === 'datatype') {
+			// Free-text edit of valueDataType: split on whitespace so
+			// multi-datatype profiles (DCMI SRAP, SimpleDSP) survive a
+			// commit-and-reopen round-trip.
+			updateStatement(description.id, stmt.id, {
+				datatype: val.split(/\s+/).filter(Boolean),
+			});
 		} else {
 			updateStatement(description.id, stmt.id, { [col.field]: val });
 		}
@@ -293,7 +324,7 @@
 
 	function hasErrors(stmt: Statement): boolean {
 		// Only flag errors when the statement has some content but is incomplete
-		const hasContent = stmt.propertyId || stmt.label || stmt.datatype || stmt.note;
+		const hasContent = stmt.propertyId || stmt.label || stmt.datatype.length > 0 || stmt.note;
 		if (!hasContent) return false;
 		// Property is required when other fields are filled
 		return !!(!stmt.propertyId && hasContent);
@@ -398,6 +429,20 @@
 										<span class="text-[10px] text-muted-foreground italic">(add another shape)</span>
 									{/if}
 								</td>
+							{:else if $assistanceEnabled && col.field === 'datatype'}
+								<!--
+									Datatype cell with assistance on is always the chip picker.
+									Mirrors the shapeRefs cell above — same affordance for a
+									multi-valued field, with a free-text fallback for custom
+									datatypes (edtf:EDTF and similar).
+								-->
+								<td class="px-1 py-0.5 align-middle">
+									<DatatypePicker
+										selected={stmt.datatype ?? []}
+										options={DATATYPE_OPTIONS}
+										onchange={(next) => updateStatement(description.id, stmt.id, { datatype: next })}
+									/>
+								</td>
 							{:else if editingCell === `${rowIndex}-${colIndex}`}
 								<td class="px-0.5 py-0.5">
 									{#if $assistanceEnabled && col.field === 'propertyId'}
@@ -490,33 +535,6 @@
 											<option value="maxLength">maxLength</option>
 											<option value="minInclusive">minInclusive</option>
 											<option value="maxInclusive">maxInclusive</option>
-										</select>
-									{:else if $assistanceEnabled && col.field === 'datatype'}
-										<!-- Smart: valueDataType dropdown -->
-										<select
-											class="w-full h-7 px-1 text-xs font-mono bg-background border border-ring rounded focus:outline-none focus:ring-1 focus:ring-ring"
-											value={editValue}
-											onchange={(e) => {
-												editValue = (e.target as HTMLSelectElement).value;
-												commitEdit(stmt, col);
-											}}
-											onblur={() => commitEdit(stmt, col)}
-											autofocus
-										>
-											<option value="">(none)</option>
-											<option value="xsd:string">xsd:string</option>
-											<option value="xsd:integer">xsd:integer</option>
-											<option value="xsd:decimal">xsd:decimal</option>
-											<option value="xsd:boolean">xsd:boolean</option>
-											<option value="xsd:date">xsd:date</option>
-											<option value="xsd:dateTime">xsd:dateTime</option>
-											<option value="xsd:time">xsd:time</option>
-											<option value="xsd:gYear">xsd:gYear</option>
-											<option value="xsd:anyURI">xsd:anyURI</option>
-											<option value="xsd:float">xsd:float</option>
-											<option value="xsd:double">xsd:double</option>
-											<option value="xsd:nonNegativeInteger">xsd:nonNegativeInteger</option>
-											<option value="rdf:langString">rdf:langString</option>
 										</select>
 									{:else}
 										<!-- Default: plain text input -->

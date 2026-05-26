@@ -33,7 +33,7 @@
 		if (stmt.classConstraint?.length > 0) return 'class';
 		if (stmt.values?.length > 0) return 'picklist';
 		if (stmt.inScheme?.length > 0) return 'vocab';
-		if (stmt.datatype) return 'datatype';
+		if (stmt.datatype && stmt.datatype.length > 0) return 'datatype';
 		if (stmt.constraint) return 'other';
 		return 'none';
 	});
@@ -61,7 +61,7 @@
 	function initFreeText() {
 		if (stmt.shapeRefs && stmt.shapeRefs.length > 0) {
 			freeText = stmt.shapeRefs.map((r) => `#${r}`).join(' ');
-		} else if (stmt.datatype && flavor === 'simpledsp') freeText = stmt.datatype;
+		} else if (stmt.datatype.length > 0 && flavor === 'simpledsp') freeText = stmt.datatype.join(' ');
 		else if (stmt.values?.length > 0) freeText = stmt.values.map((v) => `"${v}"`).join(' ');
 		else if (stmt.inScheme?.length > 0) freeText = stmt.inScheme.join(' ');
 		else freeText = stmt.constraint || '';
@@ -70,13 +70,16 @@
 	// ── Actions ─────────────────────────────────────────────────────
 
 	function selectDatatype(dt: string) {
+		// Toggle within the multi-datatype set: clicking a chip pill
+		// removes it; clicking an unchosen item appends it.
+		const current = stmt.datatype ?? [];
+		const next = current.includes(dt) ? current.filter((d) => d !== dt) : [...current, dt];
 		updateStatement(description.id, stmt.id, {
-			datatype: dt,
+			datatype: next,
 			constraint: '',
 			values: [],
 			shapeRefs: [],
 		});
-		onclose();
 	}
 
 	function toggleShapeRef(name: string) {
@@ -87,7 +90,7 @@
 		updateStatement(description.id, stmt.id, {
 			shapeRefs: next,
 			constraint: '',
-			datatype: '',
+			datatype: [],
 			classConstraint: [],
 		});
 	}
@@ -114,18 +117,18 @@
 			if (quoted) {
 				updateStatement(description.id, stmt.id, {
 					values: quoted.map((q) => q.slice(1, -1)),
-					datatype: '',
+					datatype: [],
 					constraint: '',
 				});
 			} else if (val) {
 				updateStatement(description.id, stmt.id, {
-					datatype: val,
+					datatype: val.split(/\s+/).filter(Boolean),
 					values: [],
 					constraint: '',
 				});
 			} else {
 				updateStatement(description.id, stmt.id, {
-					datatype: '',
+					datatype: [],
 					values: [],
 					constraint: '',
 				});
@@ -149,7 +152,7 @@
 
 	function clearConstraint() {
 		updateStatement(description.id, stmt.id, {
-			datatype: '',
+			datatype: [],
 			constraint: '',
 			values: [],
 			shapeRefs: [],
@@ -396,7 +399,7 @@
 						<button
 							type="button"
 							class="px-2 py-1 text-left rounded font-mono text-[11px] transition-colors
-								{stmt.datatype === dt
+								{(stmt.datatype ?? []).includes(dt)
 									? 'bg-primary text-primary-foreground'
 									: 'hover:bg-muted'}"
 							onclick={() => selectDatatype(dt)}

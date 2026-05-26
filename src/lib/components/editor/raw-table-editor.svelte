@@ -220,10 +220,15 @@
 					updateStatement(desc.id, stmt.id, {
 						shapeRefs: refs,
 						constraint: '',
-						datatype: '',
+						datatype: [],
 					});
 				} else if (stmt.valueType === 'literal' && editValue) {
-					updateStatement(desc.id, stmt.id, { datatype: editValue, constraint: '' });
+					// SimpleDSP allows multi-datatype as a space-separated list
+					// in the Constraint column (spec §4.6, Table 16).
+					updateStatement(desc.id, stmt.id, {
+						datatype: editValue.split(/\s+/).filter(Boolean),
+						constraint: '',
+					});
 				} else {
 					updateStatement(desc.id, stmt.id, { constraint: editValue });
 				}
@@ -279,7 +284,11 @@
 				break;
 			}
 			case 'valueDataType':
-				updateStatement(desc.id, stmt.id, { datatype: editValue });
+				// DCTAP valueDataType: space-separated per the DCMI SRAP
+				// convention (mirrors valueShape handling below).
+				updateStatement(desc.id, stmt.id, {
+					datatype: editValue.split(/\s+/).map((s) => s.trim()).filter(Boolean),
+				});
 				break;
 			case 'valueConstraint':
 				updateStatement(desc.id, stmt.id, { constraint: editValue });

@@ -77,7 +77,7 @@
 			collect(desc.targetClass);
 			for (const stmt of desc.statements) {
 				collect(stmt.propertyId);
-				collect(stmt.datatype);
+				collectList(stmt.datatype);
 				collectList(stmt.classConstraint);
 				collectList(stmt.inScheme);
 			}

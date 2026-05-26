@@ -11,6 +11,7 @@
 	import * as Popover from '$lib/components/ui/popover';
 	import ConstraintEditor from '$lib/components/editor/constraint-editor.svelte';
 	import ShapeRefPicker from '$lib/components/editor/shape-ref-picker.svelte';
+	import DatatypePicker from '$lib/components/editor/datatype-picker.svelte';
 	import { validateField } from '$lib/utils/validation';
 	import type { FieldValidationContext, ValidatableField } from '$lib/utils/validation';
 	import FieldError from '$lib/components/editor/field-error.svelte';
@@ -170,21 +171,21 @@
 		return (stmt.shapeRefs?.length ?? 0) > 0 || stmt.valueType === 'structured' as string;
 	}
 
-	const COMMON_DATATYPES = [
-		{ value: "", label: "(none)" },
-		{ value: "xsd:string", label: "xsd:string" },
-		{ value: "xsd:integer", label: "xsd:integer" },
-		{ value: "xsd:decimal", label: "xsd:decimal" },
-		{ value: "xsd:boolean", label: "xsd:boolean" },
-		{ value: "xsd:date", label: "xsd:date" },
-		{ value: "xsd:dateTime", label: "xsd:dateTime" },
-		{ value: "xsd:time", label: "xsd:time" },
-		{ value: "xsd:gYear", label: "xsd:gYear" },
-		{ value: "xsd:anyURI", label: "xsd:anyURI" },
-		{ value: "xsd:float", label: "xsd:float" },
-		{ value: "xsd:double", label: "xsd:double" },
-		{ value: "xsd:nonNegativeInteger", label: "xsd:nonNegativeInteger" },
-		{ value: "rdf:langString", label: "rdf:langString" },
+	const DATATYPE_OPTIONS = [
+		'xsd:string',
+		'xsd:integer',
+		'xsd:decimal',
+		'xsd:boolean',
+		'xsd:date',
+		'xsd:dateTime',
+		'xsd:time',
+		'xsd:gYear',
+		'xsd:gYearMonth',
+		'xsd:anyURI',
+		'xsd:float',
+		'xsd:double',
+		'xsd:nonNegativeInteger',
+		'rdf:langString',
 	];
 
 	const CONSTRAINT_TYPES = [
@@ -204,7 +205,7 @@
 			const updates: Partial<Statement> = { valueType: value as ValueType };
 			// When switching to 'structured', clear datatype; when switching away, clear shape refs
 			if (value === 'structured') {
-				updates.datatype = '';
+				updates.datatype = [];
 			} else {
 				updates.shapeRefs = [];
 				updates.classConstraint = [];
@@ -438,31 +439,27 @@
 							</SelectContent>
 						</Select>
 					</div>
-					<!-- Datatype (shown when literal) -->
+					<!--
+						Datatype (shown when literal). Multi-valued via chip
+						picker: SimpleDSP spec §4.6 Table 16 endorses a
+						space-separated union of datatypes; the DCMI SRAP
+						profile uses the same convention for DCTAP. Custom
+						datatypes (e.g. `edtf:EDTF`) are added through the
+						picker's free-text affordance.
+					-->
 					{#if stmt.valueType === 'literal'}
 						<div class="grid gap-1">
 							<label class={labelClass}>
 								{flavor === 'dctap' ? 'valueDataType' : 'Datatype'}
 							</label>
-							<Select
-								type="single"
-								value={stmt.datatype}
-								onValueChange={(v) => {
-									updateStatement(description.id, stmt.id, { datatype: v });
-									handleFieldValidation(`${stmt.id}-datatype`, 'datatype', v);
+							<DatatypePicker
+								selected={stmt.datatype ?? []}
+								options={DATATYPE_OPTIONS}
+								onchange={(next) => {
+									updateStatement(description.id, stmt.id, { datatype: next });
+									handleFieldValidation(`${stmt.id}-datatype`, 'datatype', next.join(' '));
 								}}
-							>
-								<SelectTrigger class="h-7 text-xs font-mono">
-									{#snippet children()}
-										<span>{stmt.datatype || '(none)'}</span>
-									{/snippet}
-								</SelectTrigger>
-								<SelectContent>
-									{#each COMMON_DATATYPES as dt}
-										<SelectItem value={dt.value} label={dt.label} class="text-xs font-mono" />
-									{/each}
-								</SelectContent>
-							</Select>
+							/>
 							<FieldError message={fieldErrors[`${stmt.id}-datatype`]} />
 						</div>
 					{/if}
