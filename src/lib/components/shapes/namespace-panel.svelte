@@ -10,6 +10,7 @@
 	import X from 'lucide-svelte/icons/x';
 	import Check from 'lucide-svelte/icons/check';
 	import Tip from '$lib/components/ui/tip.svelte';
+	import FieldLabel from '$lib/components/ui/field-label.svelte';
 
 	interface Props {
 		namespaces: NamespaceMap;
@@ -331,17 +332,19 @@
 					</button>
 				</div>
 			{:else}
-				<button
-					type="button"
-					class="text-[10px] text-muted-foreground hover:text-foreground transition-colors w-full text-left"
-					onclick={startEditBase}
-				>
-					{#if $currentProject?.base}
-						<span class="font-mono">@base: {truncateUri($currentProject.base)}</span>
-					{:else}
-						<span class="italic">+ Set base IRI</span>
-					{/if}
-				</button>
+				<Tip text="Base IRI used to expand unprefixed terms (e.g. record IDs). Optional — record URIs stay as blank nodes if no base is set.">
+					<button
+						type="button"
+						class="text-[10px] text-muted-foreground hover:text-foreground transition-colors w-full text-left"
+						onclick={startEditBase}
+					>
+						{#if $currentProject?.base}
+							<span class="font-mono">@base: {truncateUri($currentProject.base)}</span>
+						{:else}
+							<span class="italic">+ Set base IRI</span>
+						{/if}
+					</button>
+				</Tip>
 			{/if}
 		</div>
 	{/if}
@@ -361,7 +364,12 @@
 					-->
 					<div class="rounded border border-ring bg-card p-2 space-y-1.5">
 						<div class="space-y-0.5">
-							<label class="text-[9px] font-medium uppercase tracking-wider text-muted-foreground">Prefix</label>
+							<FieldLabel
+								class="text-[9px] font-medium uppercase tracking-wider text-muted-foreground"
+								help="Short alias used in prefixed terms (e.g. `foaf` in `foaf:name`). Must match the XML NCName rule: letter or underscore followed by letters, digits, dashes, dots."
+							>
+								Prefix
+							</FieldLabel>
 							<input
 								type="text"
 								bind:value={editPrefix}
@@ -372,7 +380,12 @@
 							/>
 						</div>
 						<div class="space-y-0.5">
-							<label class="text-[9px] font-medium uppercase tracking-wider text-muted-foreground">Namespace URI</label>
+							<FieldLabel
+								class="text-[9px] font-medium uppercase tracking-wider text-muted-foreground"
+								help="Full IRI the prefix expands to. Usually ends in `#` or `/` so prefixed terms concatenate cleanly (e.g. http://xmlns.com/foaf/0.1/)."
+							>
+								Namespace URI
+							</FieldLabel>
 							<input
 								type="text"
 								bind:value={editUri}
