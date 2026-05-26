@@ -35,6 +35,7 @@
 
 	import ToggleLeft from 'lucide-svelte/icons/toggle-left';
 	import ToggleRight from 'lucide-svelte/icons/toggle-right';
+	import HelpCircle from 'lucide-svelte/icons/circle-help';
 
 	interface Props {
 		description: Description;
@@ -95,33 +96,57 @@
 		field: keyof Statement | 'actions';
 		width: string;
 		mono?: boolean;
+		/**
+		 * One-line explanation surfaced via the column header's help icon.
+		 * Mirrors the FieldLabel `help` content used in the Customized
+		 * editor — keep these in sync so the vocabulary is identical
+		 * across modes.
+		 */
+		help?: string;
 	}
 
 	let columns = $derived.by((): ColumnDef[] => {
 		if (flavor === 'dctap') {
 			return [
-				{ key: 'propertyID', header: labels.columns.property, field: 'propertyId', width: 'w-[120px]', mono: true },
-				{ key: 'propertyLabel', header: labels.columns.name, field: 'label', width: 'w-[110px]' },
-				{ key: 'mandatory', header: labels.columns.min, field: 'min', width: 'w-[70px]' },
-				{ key: 'repeatable', header: labels.columns.max, field: 'max', width: 'w-[70px]' },
-				{ key: 'valueNodeType', header: labels.columns.valueType, field: 'valueType', width: 'w-[90px]' },
-				{ key: 'valueDataType', header: 'valueDataType', field: 'datatype', width: 'w-[100px]', mono: true },
-				{ key: 'constraintType', header: 'valueConstraintType', field: 'constraintType', width: 'w-[110px]' },
-				{ key: 'valueConstraint', header: labels.columns.constraint, field: 'constraint', width: 'w-[110px]' },
-				{ key: 'valueShape', header: 'valueShape', field: 'shapeRefs', width: 'w-[100px]' },
-				{ key: 'note', header: labels.columns.note, field: 'note', width: 'w-[120px]' },
+				{ key: 'propertyID', header: labels.columns.property, field: 'propertyId', width: 'w-[120px]', mono: true,
+					help: 'The RDF property this statement constrains, written as a prefixed term (e.g. dcterms:title).' },
+				{ key: 'propertyLabel', header: labels.columns.name, field: 'label', width: 'w-[110px]',
+					help: 'Human-readable label for this statement. Not validated; surfaces in generated documentation.' },
+				{ key: 'mandatory', header: labels.columns.min, field: 'min', width: 'w-[70px]',
+					help: 'TRUE if the statement is required (min cardinality ≥ 1); FALSE if optional.' },
+				{ key: 'repeatable', header: labels.columns.max, field: 'max', width: 'w-[70px]',
+					help: 'TRUE if the value can appear multiple times; FALSE if at most one.' },
+				{ key: 'valueNodeType', header: labels.columns.valueType, field: 'valueType', width: 'w-[90px]',
+					help: 'Is the value an IRI, a literal (text/number/date), or a blank node? Determines which constraint fields are valid.' },
+				{ key: 'valueDataType', header: 'valueDataType', field: 'datatype', width: 'w-[100px]', mono: true,
+					help: 'XSD datatype the literal value must satisfy (e.g. xsd:string, xsd:date). Multiple chips express alternatives — any of them is acceptable.' },
+				{ key: 'constraintType', header: 'valueConstraintType', field: 'constraintType', width: 'w-[110px]',
+					help: 'How to interpret valueConstraint. picklist = pick from a list; pattern = regex; IRIstem = URI prefix; languageTag = language-tag list; min/maxLength/Inclusive = numeric facets.' },
+				{ key: 'valueConstraint', header: labels.columns.constraint, field: 'constraint', width: 'w-[110px]',
+					help: 'Additional restriction on the value, interpreted per valueConstraintType (picklist values, regex pattern, IRI stem, etc.).' },
+				{ key: 'valueShape', header: 'valueShape', field: 'shapeRefs', width: 'w-[100px]',
+					help: 'When the value is an IRI or blank node, the shape it must conform to. Multiple chips express alternatives (DCMI SRAP convention).' },
+				{ key: 'note', header: labels.columns.note, field: 'note', width: 'w-[120px]',
+					help: 'Free-text comment about this statement. Not validated.' },
 				{ key: 'actions', header: '', field: 'actions', width: 'w-[40px]' },
 			];
 		}
 		// SimpleDSP
 		return [
-			{ key: 'name', header: labels.columns.name, field: 'label', width: 'w-[120px]' },
-			{ key: 'property', header: labels.columns.property, field: 'propertyId', width: 'w-[130px]', mono: true },
-			{ key: 'min', header: labels.columns.min, field: 'min', width: 'w-[55px]' },
-			{ key: 'max', header: labels.columns.max, field: 'max', width: 'w-[55px]' },
-			{ key: 'valueType', header: labels.columns.valueType, field: 'valueType', width: 'w-[90px]' },
-			{ key: 'constraint', header: labels.columns.constraint, field: 'constraint', width: 'w-[130px]', mono: true },
-			{ key: 'note', header: labels.columns.note, field: 'note', width: 'w-[140px]' },
+			{ key: 'name', header: labels.columns.name, field: 'label', width: 'w-[120px]',
+				help: 'Name for this statement template. Required — used to build the statement URI.' },
+			{ key: 'property', header: labels.columns.property, field: 'propertyId', width: 'w-[130px]', mono: true,
+				help: 'The RDF property this statement constrains, written as a prefixed term (e.g. dcterms:title).' },
+			{ key: 'min', header: labels.columns.min, field: 'min', width: 'w-[55px]',
+				help: 'Minimum cardinality. 0 = optional, 1 = required, n = at least n values.' },
+			{ key: 'max', header: labels.columns.max, field: 'max', width: 'w-[55px]',
+				help: 'Maximum cardinality. 1 = at most one, n = up to n, dash (-) = unbounded.' },
+			{ key: 'valueType', header: labels.columns.valueType, field: 'valueType', width: 'w-[90px]',
+				help: 'Is the value a literal (text/number/date), a reference (IRI), or a structured record? Determines how the Constraint cell is interpreted.' },
+			{ key: 'constraint', header: labels.columns.constraint, field: 'constraint', width: 'w-[130px]', mono: true,
+				help: 'Additional restriction. Interpretation depends on ValueType: datatype for literal, #blockId or class for structured, vocabulary prefix or URI list for reference.' },
+			{ key: 'note', header: labels.columns.note, field: 'note', width: 'w-[140px]',
+				help: 'Free-text comment about this statement template.' },
 			{ key: 'actions', header: '', field: 'actions', width: 'w-[40px]' },
 		];
 	});
@@ -368,12 +393,25 @@
 							capitalised as table headers.
 						-->
 						<th class="px-2 py-1.5 text-left text-[10px] font-medium text-muted-foreground tracking-wider {col.width} {flavor === 'dctap' ? 'font-mono' : 'uppercase'}">
-							{col.header}
-							{#if col.field === 'propertyId'}
-								<span class="text-destructive">*</span>
-							{:else if col.field === 'label' && flavor === 'simpledsp'}
-								<span class="text-destructive">*</span>
-							{/if}
+							<span class="inline-flex items-baseline gap-1">
+								<span>{col.header}</span>
+								{#if col.field === 'propertyId'}
+									<span class="text-destructive">*</span>
+								{:else if col.field === 'label' && flavor === 'simpledsp'}
+									<span class="text-destructive">*</span>
+								{/if}
+								{#if col.help}
+									<Tip text={col.help}>
+										<button
+											type="button"
+											class="inline-flex items-center text-muted-foreground/50 hover:text-muted-foreground focus-visible:text-muted-foreground transition-colors [&_svg]:pointer-events-none"
+											aria-label="Help"
+										>
+											<HelpCircle class="h-3 w-3" />
+										</button>
+									</Tip>
+								{/if}
+							</span>
 						</th>
 					{/each}
 				</tr>
