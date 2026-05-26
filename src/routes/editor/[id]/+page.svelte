@@ -145,6 +145,7 @@
 					showCardinality: s.showCardinality,
 					showLabel: s.showLabel,
 					showProperty: s.showProperty,
+					showDatatype: s.showDatatype,
 				});
 			} catch {
 				// silent — next reload simply uses defaults
@@ -171,6 +172,7 @@
 				showCardinality: prefs.showCardinality,
 				showLabel: prefs.showLabel,
 				showProperty: prefs.showProperty,
+				showDatatype: prefs.showDatatype,
 			});
 		} catch {
 			// silent — falls back to the store defaults

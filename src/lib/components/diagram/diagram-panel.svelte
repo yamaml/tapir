@@ -63,6 +63,10 @@
 	const showLabel = $derived($diagramSettings.showLabel);
 	const showProperty = $derived($diagramSettings.showProperty);
 	const showBoth = $derived(showLabel && showProperty);
+	// Suppresses the literal-datatype column when off. Shape references
+	// (→ Person, ↺ self) are always shown — they encode edge structure,
+	// not just a literal type label.
+	const showDatatype = $derived($diagramSettings.showDatatype);
 	let expanded = $state(false);
 	let svgEl: SVGSVGElement | undefined = $state();
 	let hoveredEdgeId = $state<string | null>(null);
@@ -268,9 +272,12 @@
 			// with mono metrics so node width accommodates actual glyph
 			// widths, not Inter's narrower ones.
 			maxPropWidth = Math.max(maxPropWidth, safeTextWidth(prop, 10, 'bold', 'mono'));
-			const tl = typeLabel(stmt, ns);
 			const refs = stmt.shapeRefs ?? [];
-			const prefix = refs.includes(desc.name) ? '\u21BA ' : (refs.length > 0 ? '\u2192 ' : '');
+			const isRef = refs.length > 0;
+			// Mirror the row-build suppression: hide the datatype string
+			// when the toggle is off and the row isn't a shape reference.
+			const tl = !showDatatype && !isRef ? '' : typeLabel(stmt, ns);
+			const prefix = refs.includes(desc.name) ? '\u21BA ' : (isRef ? '\u2192 ' : '');
 			maxTypeWidth = Math.max(maxTypeWidth, safeTextWidth(prefix + tl, 9, 'normal'));
 		}
 		const contentWidth = NODE_PAD_H + maxPropWidth + 20 + maxTypeWidth + CARD_COL_WIDTH + NODE_PAD_H;
@@ -329,12 +336,16 @@
 
 			const stmts = desc.statements.map((stmt) => {
 				const prop = compactIRI(stmt.propertyId, ns) || stmt.id;
-				const tl = typeLabel(stmt, ns);
+				const tlRaw = typeLabel(stmt, ns);
 				const card = formatCard(stmt.min, stmt.max);
 				const refs = stmt.shapeRefs ?? [];
 				const resolvedRefs = refs.filter((r) => descNames.has(r));
 				const isRef = resolvedRefs.length > 0;
 				const isSelfRef = resolvedRefs.length === 1 && resolvedRefs[0] === desc.name;
+				// Suppress the datatype string when the toggle is off. Shape
+				// references stay visible — they're load-bearing for the
+				// edge structure, not just a decorative type label.
+				const tl = !showDatatype && !isRef ? '' : tlRaw;
 				return {
 					id: stmt.id,
 					propertyId: prop,
@@ -555,12 +566,15 @@
 	$effect(() => {
 		const _proj = project;
 		const _style = style;
-		// Track the three display toggles so the effect re-runs when
-		// they change — Elk's edge routing depends on label presence
-		// and width reservations, so the layout has to recompute.
+		// Track the display toggles so the effect re-runs when they
+		// change — Elk's edge routing depends on label presence and
+		// width reservations, so the layout has to recompute. Same
+		// goes for the datatype column, which contributes to row
+		// width measurement.
 		const _showEdges = showEdges;
 		const _showEdgeLabels = showEdgeLabels;
 		const _showCard = showCardinality;
+		const _showDatatype = showDatatype;
 
 		if (debounceTimer) clearTimeout(debounceTimer);
 		debounceTimer = setTimeout(() => {
@@ -894,6 +908,15 @@
 										type="checkbox"
 										checked={$diagramSettings.showCardinality}
 										onchange={(e) => diagramSettings.update((s) => ({ ...s, showCardinality: (e.currentTarget as HTMLInputElement).checked }))}
+										class="h-3.5 w-3.5 rounded border-border accent-primary"
+									/>
+								</label>
+								<label class="flex items-center justify-between cursor-pointer">
+									<span class="text-xs text-foreground">Show datatypes</span>
+									<input
+										type="checkbox"
+										checked={$diagramSettings.showDatatype}
+										onchange={(e) => diagramSettings.update((s) => ({ ...s, showDatatype: (e.currentTarget as HTMLInputElement).checked }))}
 										class="h-3.5 w-3.5 rounded border-border accent-primary"
 									/>
 								</label>

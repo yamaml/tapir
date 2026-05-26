@@ -263,6 +263,7 @@ export interface UserPrefs {
 	showCardinality: boolean;
 	showLabel: boolean;
 	showProperty: boolean;
+	showDatatype: boolean;
 	simpleDspLang: 'en' | 'jp';
 	assistanceEnabled: boolean;
 	sidebarWidth: number;
@@ -279,6 +280,7 @@ export const DEFAULT_PREFS: UserPrefs = {
 	showCardinality: true,
 	showLabel: false,
 	showProperty: true,
+	showDatatype: true,
 	simpleDspLang: 'en',
 	assistanceEnabled: true,
 	sidebarWidth: 220,

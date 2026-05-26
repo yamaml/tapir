@@ -53,6 +53,16 @@ export interface DiagramSettings {
 	showLabel: boolean;
 	/** Row-content toggle: whether the property IRI (`dct:creator`) is shown. */
 	showProperty: boolean;
+	/**
+	 * Row-content toggle: whether the literal value's datatype (e.g.
+	 * `xsd:string`, `xsd:gYear xsd:date`) is shown in the row's type
+	 * column. Shape references (`→ Person`, `↺ self`) are always
+	 * shown regardless — they encode edges that the diagram structure
+	 * depends on. Defaults to `true` because newcomers benefit from
+	 * seeing what a "literal" actually is; power users can hide it
+	 * to declutter dense profiles.
+	 */
+	showDatatype: boolean;
 }
 
 /**
@@ -72,6 +82,7 @@ export const DEFAULT_DIAGRAM_SETTINGS: DiagramSettings = {
 	showCardinality: true,
 	showLabel: false,
 	showProperty: true,
+	showDatatype: true,
 };
 
 // ── Store ───────────────────────────────────────────────────────
