@@ -23,7 +23,7 @@
  *         min: <number>
  *         max: <number>
  *         type: <string>
- *         datatype: <string>
+ *         datatype: <string> | [<string>, ...]
  *         description: <name>
  *         a: <class> | [<class>, ...]
  *         inScheme: <scheme> | [<scheme>, ...]
@@ -70,7 +70,9 @@ interface RawYamaStatement {
 	min?: number;
 	max?: number;
 	type?: string;
-	datatype?: string;
+	/** Datatype(s). Accepts scalar or array — legacy single-datatype
+	 * YAML emits a string; multi-datatype emits a sequence. */
+	datatype?: string | string[];
 	/** Shape reference(s). Scalar or array in YAML. */
 	description?: string | string[];
 	/** Class constraint(s) on the value node. Scalar or array in YAML. */
@@ -156,7 +158,7 @@ function convertStatement(key: string, raw: RawYamaStatement): Statement {
 		min: raw.min ?? null,
 		max: raw.max ?? null,
 		valueType: resolveValueType(raw.type),
-		datatype: raw.datatype || '',
+		datatype: toStringArray(raw.datatype),
 		values: Array.isArray(raw.values) ? raw.values : [],
 		pattern: raw.pattern || '',
 		shapeRefs: toStringArray(raw.description),

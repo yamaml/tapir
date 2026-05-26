@@ -432,7 +432,11 @@ export function simpleDspToTapir(
 						if (constraint.startsWith('"')) {
 							stmt.values = parseQuotedValues(constraint);
 						} else {
-							stmt.datatype = constraint;
+							// Multi-datatype is endorsed by the SimpleDSP spec
+							// (§4.6 Table 16, literal-constraint row 3): a
+							// space-separated list expresses a union of
+							// datatypes (e.g. `xsd:decimal xsd:integer`).
+							stmt.datatype = constraint.split(/\s+/).filter(Boolean);
 						}
 					}
 					break;
@@ -473,7 +477,7 @@ export function simpleDspToTapir(
 				default:
 					// No specific type — leave unconstrained
 					if (constraint) {
-						stmt.datatype = constraint;
+						stmt.datatype = constraint.split(/\s+/).filter(Boolean);
 					}
 					break;
 			}

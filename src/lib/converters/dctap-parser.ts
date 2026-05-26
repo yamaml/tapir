@@ -341,9 +341,12 @@ export function dctapRowsToTapir(
 		const valueType = fromValueNodeType(row.valueNodeType);
 		if (valueType) stmt.valueType = valueType;
 
-		// Value data type
+		// Value data type — space-separated multi-value per the DCMI
+		// SRAP convention (e.g. "xsd:gYear xsd:gYearMonth xsd:date").
 		const dataType = String(row.valueDataType || '').trim();
-		if (dataType) stmt.datatype = dataType;
+		if (dataType) {
+			stmt.datatype = dataType.split(/\s+/).filter(Boolean);
+		}
 
 		// Cardinality
 		const mandatory = parseBool(row.mandatory);
