@@ -58,7 +58,7 @@ describe('resolveSimpleDspValueType', () => {
 	});
 
 	it('returns "literal" for datatype present', () => {
-		const stmt = createStatement({ datatype: 'xsd:string' });
+		const stmt = createStatement({ datatype: ['xsd:string'] });
 		expect(resolveSimpleDspValueType(stmt)).toBe('literal');
 	});
 
@@ -89,7 +89,7 @@ describe('resolveSimpleDspConstraint', () => {
 	});
 
 	it('returns datatype', () => {
-		const stmt = createStatement({ datatype: 'xsd:date' });
+		const stmt = createStatement({ datatype: ['xsd:date'] });
 		expect(resolveSimpleDspConstraint(stmt)).toBe('xsd:date');
 	});
 
@@ -344,7 +344,7 @@ describe('buildSimpleDsp', () => {
 						min: 1,
 						max: 1,
 						valueType: 'literal',
-						datatype: 'xsd:string',
+						datatype: ['xsd:string'],
 						note: 'Book title',
 					}),
 					createStatement({
@@ -402,7 +402,7 @@ describe('round-trip (generate -> parse)', () => {
 						min: 1,
 						max: 1,
 						valueType: 'literal',
-						datatype: 'xsd:string',
+						datatype: ['xsd:string'],
 						note: 'Book title',
 					}),
 					createStatement({
@@ -455,7 +455,7 @@ describe('round-trip (generate -> parse)', () => {
 		expect(title.min).toBe(1);
 		expect(title.max).toBe(1);
 		expect(title.valueType).toBe('literal');
-		expect(title.datatype).toBe('xsd:string');
+		expect(title.datatype).toEqual(['xsd:string']);
 		expect(title.note).toBe('Book title');
 
 		const subject = book.statements[1];

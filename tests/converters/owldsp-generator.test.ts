@@ -27,7 +27,7 @@ describe('buildOwlDsp', () => {
 						min: 1,
 						max: 1,
 						valueType: 'literal',
-						datatype: 'xsd:string',
+						datatype: ['xsd:string'],
 					}),
 				],
 			}),

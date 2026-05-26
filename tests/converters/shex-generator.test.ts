@@ -63,7 +63,7 @@ describe('formatNodeConstraint', () => {
 	});
 
 	it('returns datatype', () => {
-		const stmt = createStatement({ datatype: 'xsd:string' });
+		const stmt = createStatement({ datatype: ['xsd:string'] });
 		expect(formatNodeConstraint(stmt)).toBe('xsd:string');
 	});
 
@@ -94,7 +94,7 @@ describe('formatNodeConstraint', () => {
 
 	it('appends pattern facet', () => {
 		const stmt = createStatement({
-			datatype: 'xsd:string',
+			datatype: ['xsd:string'],
 			pattern: '^[A-Z]',
 		});
 		expect(formatNodeConstraint(stmt)).toBe('xsd:string //^[A-Z]//');
@@ -102,7 +102,7 @@ describe('formatNodeConstraint', () => {
 
 	it('appends numeric facets', () => {
 		const stmt = createStatement({
-			datatype: 'xsd:integer',
+			datatype: ['xsd:integer'],
 			facets: { MinInclusive: 0, MaxInclusive: 100 },
 		});
 		expect(formatNodeConstraint(stmt)).toBe(
@@ -113,7 +113,7 @@ describe('formatNodeConstraint', () => {
 	it('shape reference takes precedence over datatype', () => {
 		const stmt = createStatement({
 			shapeRefs: ['Person'],
-			datatype: 'xsd:string',
+			datatype: ['xsd:string'],
 		});
 		expect(formatNodeConstraint(stmt)).toBe('@<Person>');
 	});
@@ -189,7 +189,7 @@ describe('buildShExC', () => {
 					createStatement({
 						propertyId: 'foaf:name',
 						valueType: 'literal',
-						datatype: 'xsd:string',
+						datatype: ['xsd:string'],
 						min: 1,
 						max: 1,
 					}),
@@ -214,7 +214,7 @@ describe('buildShExC', () => {
 				name: 'Person',
 				statements: [
 					createStatement({ propertyId: 'foaf:name', valueType: 'literal' }),
-					createStatement({ propertyId: 'foaf:age', datatype: 'xsd:integer' }),
+					createStatement({ propertyId: 'foaf:age', datatype: ['xsd:integer'] }),
 				],
 			}),
 		];
@@ -256,7 +256,7 @@ describe('buildShExC', () => {
 				statements: [
 					createStatement({
 						propertyId: 'foaf:name',
-						datatype: 'xsd:string',
+						datatype: ['xsd:string'],
 						min: 1,
 						max: 1,
 					}),

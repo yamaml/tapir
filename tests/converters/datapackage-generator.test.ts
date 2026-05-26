@@ -77,7 +77,7 @@ describe('buildDataPackageObject', () => {
 				statements: [
 					createStatement({
 						propertyId: 'foaf:name',
-						datatype: 'xsd:string',
+						datatype: ['xsd:string'],
 					}),
 				],
 			}),
@@ -95,7 +95,7 @@ describe('buildDataPackageObject', () => {
 				statements: [
 					createStatement({
 						propertyId: 'foaf:age',
-						datatype: 'xsd:integer',
+						datatype: ['xsd:integer'],
 					}),
 				],
 			}),
@@ -113,7 +113,7 @@ describe('buildDataPackageObject', () => {
 				statements: [
 					createStatement({
 						propertyId: 'schema:birthDate',
-						datatype: 'xsd:date',
+						datatype: ['xsd:date'],
 					}),
 				],
 			}),
@@ -131,7 +131,7 @@ describe('buildDataPackageObject', () => {
 				statements: [
 					createStatement({
 						propertyId: 'ex:active',
-						datatype: 'xsd:boolean',
+						datatype: ['xsd:boolean'],
 					}),
 				],
 			}),
@@ -286,7 +286,7 @@ describe('buildDataPackageObject', () => {
 				statements: [
 					createStatement({
 						propertyId: 'ex:score',
-						datatype: 'xsd:integer',
+						datatype: ['xsd:integer'],
 						facets: { MinInclusive: 0, MaxInclusive: 100 },
 					}),
 				],
@@ -376,12 +376,12 @@ describe('buildDataPackage', () => {
 						label: 'Name',
 						min: 1,
 						max: 1,
-						datatype: 'xsd:string',
+						datatype: ['xsd:string'],
 					}),
 					createStatement({
 						propertyId: 'foaf:age',
 						label: 'Age',
-						datatype: 'xsd:integer',
+						datatype: ['xsd:integer'],
 						facets: { MinInclusive: 0 },
 					}),
 				],

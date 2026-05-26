@@ -82,7 +82,7 @@ describe('buildYamaJson', () => {
 						min: 1,
 						max: 1,
 						valueType: 'literal',
-						datatype: 'xsd:string',
+						datatype: ['xsd:string'],
 					}),
 				],
 			}),
@@ -95,7 +95,7 @@ describe('buildYamaJson', () => {
 		expect(stmt.min).toBe(1);
 		expect(stmt.max).toBe(1);
 		expect(stmt.type).toBe('literal');
-		expect(stmt.datatype).toBe('xsd:string');
+		expect(stmt.datatype).toEqual(['xsd:string']);
 	});
 
 	it('includes shape reference as "description"', () => {
@@ -208,7 +208,7 @@ describe('buildYamaJson', () => {
 						min: 1,
 						max: 1,
 						valueType: 'literal',
-						datatype: 'xsd:string',
+						datatype: ['xsd:string'],
 					}),
 				],
 			}),

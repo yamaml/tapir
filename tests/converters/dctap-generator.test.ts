@@ -238,7 +238,7 @@ describe('buildDctapRows', () => {
 						min: 1,
 						max: 1,
 						valueType: 'literal',
-						datatype: 'xsd:string',
+						datatype: ['xsd:string'],
 						note: 'Full name',
 					}),
 					createStatement({
@@ -343,7 +343,7 @@ describe('round-trip (generate -> parse)', () => {
 						min: 1,
 						max: 1,
 						valueType: 'literal',
-						datatype: 'xsd:string',
+						datatype: ['xsd:string'],
 						note: 'Full name',
 					}),
 					createStatement({
@@ -397,7 +397,7 @@ describe('round-trip (generate -> parse)', () => {
 		expect(name.min).toBe(1);
 		expect(name.max).toBe(1);
 		expect(name.valueType).toBe('literal');
-		expect(name.datatype).toBe('xsd:string');
+		expect(name.datatype).toEqual(['xsd:string']);
 		expect(name.note).toBe('Full name');
 
 		const email = person.statements[1];

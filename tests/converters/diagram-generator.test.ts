@@ -116,7 +116,7 @@ describe('typeLabel', () => {
 	});
 
 	it('returns compacted datatype', () => {
-		const stmt = createStatement({ datatype: 'xsd:string' });
+		const stmt = createStatement({ datatype: ['xsd:string'] });
 		expect(typeLabel(stmt, ns)).toBe('xsd:string');
 	});
 
@@ -163,7 +163,7 @@ describe('buildDot', () => {
 						id: 'name',
 						propertyId: 'foaf:name',
 						valueType: 'literal',
-						datatype: 'xsd:string',
+						datatype: ['xsd:string'],
 						min: 1,
 						max: 1,
 					}),

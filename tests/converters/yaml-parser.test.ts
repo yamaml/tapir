@@ -78,7 +78,7 @@ descriptions:
 		expect(stmt.min).toBe(1);
 		expect(stmt.max).toBe(1);
 		expect(stmt.valueType).toBe('literal');
-		expect(stmt.datatype).toBe('xsd:string');
+		expect(stmt.datatype).toEqual(['xsd:string']);
 		expect(stmt.note).toBe('Full name');
 	});
 

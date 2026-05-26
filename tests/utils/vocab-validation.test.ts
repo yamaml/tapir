@@ -43,7 +43,7 @@ describe('validateStatementVocab', () => {
 		const stmt = createStatement({
 			propertyId: 'foaf:name',
 			valueType: 'literal',
-			datatype: 'xsd:string',
+			datatype: ['xsd:string'],
 		});
 		const out = validateStatementVocab(stmt, desc, 'MAIN.name', makeVocabs(foaf, xsd));
 		expect(out).toHaveLength(0);
@@ -67,7 +67,7 @@ describe('validateStatementVocab', () => {
 		const stmt = createStatement({
 			propertyId: 'foaf:age',
 			valueType: 'literal',
-			datatype: 'xsd:string',
+			datatype: ['xsd:string'],
 		});
 		const out = validateStatementVocab(stmt, desc, 'MAIN.age', makeVocabs(foaf, xsd));
 		expect(out).toHaveLength(1);
@@ -79,7 +79,7 @@ describe('validateStatementVocab', () => {
 		const stmt = createStatement({
 			propertyId: 'foaf:age',
 			valueType: 'literal',
-			datatype: 'xsd:integer',
+			datatype: ['xsd:integer'],
 		});
 		const out = validateStatementVocab(stmt, docDesc, 'DOC.age', makeVocabs(foaf));
 		expect(out).toHaveLength(1);
@@ -91,7 +91,7 @@ describe('validateStatementVocab', () => {
 		const stmt = createStatement({
 			propertyId: 'foaf:name',
 			valueType: 'literal',
-			datatype: 'xsd:string',
+			datatype: ['xsd:string'],
 		});
 		const out = validateStatementVocab(stmt, desc, 'MAIN.name', makeVocabs(foaf));
 		expect(out).toHaveLength(0);
@@ -120,7 +120,7 @@ describe('validateStatementVocab', () => {
 		const stmt = createStatement({
 			propertyId: 'foaf:age',
 			valueType: 'literal',
-			datatype: 'custom:weird',
+			datatype: ['custom:weird'],
 		});
 		const out = validateStatementVocab(stmt, desc, 'MAIN.age', makeVocabs(foaf));
 		expect(out).toHaveLength(0);
@@ -146,7 +146,7 @@ describe('validateProject vocab-aware mode', () => {
 					createStatement({
 						propertyId: 'foaf:age',
 						valueType: 'literal',
-						datatype: 'xsd:integer',
+						datatype: ['xsd:integer'],
 					}),
 				],
 			}),
@@ -168,7 +168,7 @@ describe('validateProject vocab-aware mode', () => {
 					createStatement({
 						propertyId: 'foaf:age',
 						valueType: 'literal',
-						datatype: 'xsd:integer',
+						datatype: ['xsd:integer'],
 					}),
 				],
 			}),

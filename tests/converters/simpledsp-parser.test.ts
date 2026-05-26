@@ -198,7 +198,7 @@ describe('simpleDspToTapir', () => {
 		expect(stmt.min).toBe(1);
 		expect(stmt.max).toBe(1);
 		expect(stmt.valueType).toBe('literal');
-		expect(stmt.datatype).toBe('xsd:string');
+		expect(stmt.datatype).toEqual(['xsd:string']);
 		expect(stmt.note).toBe('The person name');
 	});
 
@@ -531,7 +531,7 @@ describe('simpleDspToTapir', () => {
 
 		const result = simpleDspToTapir(blocks, {});
 		const stmt = result.data.descriptions[0].statements[0];
-		expect(stmt.datatype).toBe('xsd:integer');
+		expect(stmt.datatype).toEqual(['xsd:integer']);
 	});
 
 	it('handles reference with angle-bracket URIs', () => {

@@ -77,7 +77,7 @@ describe('buildYamaYaml', () => {
 						min: 1,
 						max: 1,
 						valueType: 'literal',
-						datatype: 'xsd:string',
+						datatype: ['xsd:string'],
 						note: 'Full name',
 					}),
 				],
@@ -89,7 +89,10 @@ describe('buildYamaYaml', () => {
 		expect(yaml).toContain('min: 1');
 		expect(yaml).toContain('max: 1');
 		expect(yaml).toContain('type: literal');
-		expect(yaml).toContain('datatype: xsd:string');
+		// YAMAML always-list form for datatype; multi-datatype support
+		// from SimpleDSP §4.6 Table 16 is the source of the union shape.
+		expect(yaml).toContain('datatype:');
+		expect(yaml).toContain('- xsd:string');
 		expect(yaml).toContain('note: Full name');
 	});
 
@@ -195,7 +198,7 @@ describe('round-trip (generate -> parse)', () => {
 						min: 1,
 						max: 1,
 						valueType: 'literal',
-						datatype: 'xsd:string',
+						datatype: ['xsd:string'],
 						note: 'Full name',
 					}),
 					createStatement({
@@ -231,7 +234,7 @@ describe('round-trip (generate -> parse)', () => {
 		expect(nameStmt.propertyId).toBe('foaf:name');
 		expect(nameStmt.min).toBe(1);
 		expect(nameStmt.max).toBe(1);
-		expect(nameStmt.datatype).toBe('xsd:string');
+		expect(nameStmt.datatype).toEqual(['xsd:string']);
 
 		const knowsStmt = desc.statements[1];
 		expect(knowsStmt.shapeRefs).toEqual(['Person']);

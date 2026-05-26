@@ -56,7 +56,7 @@ describe('validateProject', () => {
 				statements: [
 					createStatement({ propertyId: 'foaf:name' }),
 					createStatement({ propertyId: 'dcterms:title' }),
-					createStatement({ propertyId: 'xsd:string', datatype: 'xsd:string' }),
+					createStatement({ propertyId: 'xsd:string', datatype: ['xsd:string'] }),
 				],
 			}),
 		];

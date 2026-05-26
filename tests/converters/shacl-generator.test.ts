@@ -140,7 +140,7 @@ describe('buildPropertyShape', () => {
 		const shapeNode = namedNode('http://example.org/S');
 		const stmt = createStatement({
 			propertyId: 'foaf:name',
-			datatype: 'xsd:string',
+			datatype: ['xsd:string'],
 		});
 
 		buildPropertyShape(shapeNode, stmt, { ...ns, ...xsd }, base, quads);
@@ -170,7 +170,7 @@ describe('buildPropertyShape', () => {
 		const stmt = createStatement({
 			propertyId: 'foaf:name',
 			valueType: 'literal',
-			datatype: 'xsd:string',
+			datatype: ['xsd:string'],
 		});
 
 		buildPropertyShape(shapeNode, stmt, { ...ns, ...xsd }, base, quads);

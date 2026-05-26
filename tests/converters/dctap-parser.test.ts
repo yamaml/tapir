@@ -232,7 +232,7 @@ describe('dctapRowsToTapir', () => {
 		expect(stmt.min).toBe(1);
 		expect(stmt.max).toBe(1);
 		expect(stmt.valueType).toBe('literal');
-		expect(stmt.datatype).toBe('xsd:string');
+		expect(stmt.datatype).toEqual(['xsd:string']);
 		expect(stmt.note).toBe('Full name');
 	});
 
@@ -448,7 +448,7 @@ describe('dctapRowsToTapir — case-insensitive column headers', () => {
 		expect(stmt.min).toBe(1);
 		expect(stmt.max).toBe(1);
 		expect(stmt.valueType).toBe('literal');
-		expect(stmt.datatype).toBe('xsd:string');
+		expect(stmt.datatype).toEqual(['xsd:string']);
 		expect(stmt.values).toEqual(['a', 'b']);
 		expect(stmt.constraintType).toBe('picklist');
 		expect(stmt.note).toBe('Full name');
@@ -476,10 +476,10 @@ describe('dctapRowsToTapir — case-insensitive column headers', () => {
 			return undefined;
 		};
 
-		expect(findStmt('dct:language')?.datatype).toBe('xsd:string');
-		expect(findStmt('dct:abstract')?.datatype).toBe('xsd:string');
-		expect(findStmt('bibo:isbn')?.datatype).toBe('xsd:string');
-		expect(findStmt('srap:embargoDateRange')?.datatype).toBe('edtf:EDTF');
+		expect(findStmt('dct:language')?.datatype).toEqual(['xsd:string']);
+		expect(findStmt('dct:abstract')?.datatype).toEqual(['xsd:string']);
+		expect(findStmt('bibo:isbn')?.datatype).toEqual(['xsd:string']);
+		expect(findStmt('srap:embargoDateRange')?.datatype).toEqual(['edtf:EDTF']);
 
 		const nonEmpty = result.data.descriptions.flatMap((d) =>
 			d.statements.filter((s) => s.datatype),
