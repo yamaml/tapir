@@ -68,7 +68,25 @@ export interface Statement {
 	max: number | null;
 	cardinalityNote: string;
 	valueType: ValueType;
-	datatype: string;
+	/**
+	 * Datatype constraint(s) for literal values.
+	 *
+	 * Multi-valued semantics: when more than one datatype is present,
+	 * they represent alternatives (logical OR). Authored across the
+	 * ecosystem as:
+	 *   - SimpleDSP: space-separated in the Constraint cell, e.g.
+	 *     `xsd:decimal xsd:integer` — endorsed by the original 2010
+	 *     spec (§4.6, Table 16, literal-constraint row 3).
+	 *   - DCTAP: space-separated `valueDataType` cell, per the DCMI
+	 *     SRAP convention (e.g. `xsd:gYear xsd:gYearMonth xsd:date`).
+	 *   - OWL-DSP: a union of `owl:onDataRange` values.
+	 *   - SHACL: `sh:or` of nested `[sh:datatype X]` blank nodes
+	 *     (`sh:datatype` itself is single-valued).
+	 *   - ShEx: parenthesised `OR` disjunction.
+	 *   - Frictionless: only the first is emitted; the rest produce
+	 *     an export warning (one type per field).
+	 */
+	datatype: string[];
 	values: string[];
 	pattern: string;
 	facets: FacetMap;
@@ -221,7 +239,7 @@ export function createStatement(init?: Partial<Statement>): Statement {
 		max: null,
 		cardinalityNote: '',
 		valueType: '',
-		datatype: '',
+		datatype: [],
 		values: [],
 		pattern: '',
 		facets: {},

@@ -299,7 +299,7 @@ export function renamePrefix(oldPrefix: string, newPrefix: string): boolean {
 			statements: d.statements.map((s) => ({
 				...s,
 				propertyId: swap(s.propertyId),
-				datatype: swap(s.datatype),
+				datatype: swapList(s.datatype) ?? [],
 				classConstraint: swapList(s.classConstraint) ?? [],
 				inScheme: swapList(s.inScheme) ?? [],
 				values: swapList(s.values) ?? [],

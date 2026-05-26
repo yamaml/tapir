@@ -208,25 +208,29 @@ export function validateStatementVocab(
 
 		// Check 2: range datatype vs declared datatype. Only fires for
 		// xsd ranges with an xsd-prefixed datatype; cross-namespace
-		// datatype comparisons fall through silently.
-		if (allLiteral && stmt.datatype) {
-			const dtParts = splitPrefixed(stmt.datatype);
-			const rangeIsXsd = propTerm.r.every(
+		// datatype comparisons fall through silently. With multi-datatype
+		// (SimpleDSP-style union), we warn only when every declared xsd
+		// datatype falls outside the property's range — a single matching
+		// member is enough to satisfy the union.
+		if (allLiteral && stmt.datatype.length > 0) {
+			const range = propTerm.r;
+			const rangeIsXsd = range.every(
 				(r) => r !== 'Literal' && XSD_LITERAL_TYPES.has(r),
 			);
-			if (
-				dtParts &&
-				dtParts.prefix === 'xsd' &&
-				rangeIsXsd &&
-				!propTerm.r.includes(dtParts.local)
-			) {
-				warnings.push({
-					field: fieldKey,
-					message:
-						`Property "${stmt.propertyId}" range is ` +
-						`${propTerm.r.map((r) => `xsd:${r}`).join(' or ')}, ` +
-						`but datatype is "${stmt.datatype}"`,
-				});
+			if (rangeIsXsd) {
+				const xsdDeclared = stmt.datatype
+					.map((dt) => splitPrefixed(dt))
+					.filter((p): p is { prefix: string; local: string } => !!p && p.prefix === 'xsd');
+				const someInRange = xsdDeclared.some((p) => range.includes(p.local));
+				if (xsdDeclared.length > 0 && !someInRange) {
+					warnings.push({
+						field: fieldKey,
+						message:
+							`Property "${stmt.propertyId}" range is ` +
+							`${range.map((r) => `xsd:${r}`).join(' or ')}, ` +
+							`but datatype is "${stmt.datatype.join(' ')}"`,
+					});
+				}
 			}
 		}
 	}

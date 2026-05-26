@@ -47,6 +47,31 @@ function getDb(): Promise<IDBPDatabase> {
 	return dbPromise;
 }
 
+// ── Legacy Migrations ───────────────────────────────────────────
+
+/**
+ * In-place tolerant read for legacy projects.
+ *
+ * `Statement.datatype` was a `string` before multi-datatype support
+ * landed; older IndexedDB records still carry that shape. This shim
+ * promotes any string-typed `datatype` to an array on read, splitting
+ * on whitespace so values authored as `"xsd:gYear xsd:date"` (the
+ * SimpleDSP and SRAP convention) survive the migration without loss.
+ */
+function migrateLegacyDatatype(project: TapirProject): TapirProject {
+	for (const desc of project.descriptions ?? []) {
+		for (const stmt of desc.statements ?? []) {
+			const dt = (stmt as unknown as { datatype: unknown }).datatype;
+			if (typeof dt === 'string') {
+				stmt.datatype = dt.split(/\s+/).filter(Boolean);
+			} else if (!Array.isArray(dt)) {
+				stmt.datatype = [];
+			}
+		}
+	}
+	return project;
+}
+
 // ── Project Operations ──────────────────────────────────────────
 
 /** Saves a project to IndexedDB (create or update). */
@@ -58,7 +83,8 @@ export async function saveProject(project: TapirProject): Promise<void> {
 /** Loads a project by ID. Returns undefined if not found. */
 export async function loadProject(id: string): Promise<TapirProject | undefined> {
 	const db = await getDb();
-	return db.get('projects', id);
+	const project = await db.get('projects', id);
+	return project ? migrateLegacyDatatype(project) : undefined;
 }
 
 /**

@@ -186,15 +186,13 @@ export function validateStatement(
 		}
 	}
 
-	if (stmt.datatype) {
-		for (const dt of splitTokens(stmt.datatype)) {
-			const prefix = extractPrefix(dt);
-			if (prefix && !isPrefixKnown(prefix, namespaces)) {
-				errors.push({
-					field: fieldKey,
-					message: `Unknown prefix "${prefix}" in datatype "${dt}"`,
-				});
-			}
+	for (const dt of stmt.datatype ?? []) {
+		const prefix = extractPrefix(dt);
+		if (prefix && !isPrefixKnown(prefix, namespaces)) {
+			errors.push({
+				field: fieldKey,
+				message: `Unknown prefix "${prefix}" in datatype "${dt}"`,
+			});
 		}
 	}
 
@@ -251,7 +249,7 @@ export function validateStatement(
 			message: `Literal ${stmtTerm.toLowerCase()} should not carry a ${descTerm} reference`,
 		});
 	}
-	if (stmt.valueType === 'iri' && stmt.datatype) {
+	if (stmt.valueType === 'iri' && stmt.datatype.length > 0) {
 		warnings.push({
 			field: fieldKey,
 			message: `IRI ${stmtTerm.toLowerCase()} should not carry a datatype`,
@@ -267,7 +265,7 @@ export function validateStatement(
 	// 5. DCTAP-specific rules
 	if (flavor === 'dctap') {
 		const hasConstraint =
-			!!stmt.datatype ||
+			stmt.datatype.length > 0 ||
 			hasAnyShapeRef ||
 			(stmt.values && stmt.values.length > 0) ||
 			(stmt.classConstraint && stmt.classConstraint.length > 0);
