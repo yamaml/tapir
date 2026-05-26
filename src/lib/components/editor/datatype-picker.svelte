@@ -89,13 +89,22 @@
 		'rdf:JSON',
 	];
 
+	/** The complete searchable pool: the caller's quick-pick options
+	 *  plus the long-tail pool, de-duplicated. Quick-pick entries
+	 *  surface in typeahead too so users who remember a datatype name
+	 *  (e.g. "xsd:float") don't have to mentally check whether it's
+	 *  a chip above or a long-tail entry — they just type. */
+	let searchPool = $derived(
+		Array.from(new Set([...options, ...TYPEAHEAD_POOL])),
+	);
+
 	/** Filtered suggestions: case-insensitive substring match, capped at
 	 *  10 entries so the floater never grows unreasonably tall inside the
 	 *  popover. Excludes already-selected items. */
 	let suggestions = $derived.by((): string[] => {
 		const q = customInput.trim().toLowerCase();
 		if (!q) return [];
-		return TYPEAHEAD_POOL
+		return searchPool
 			.filter((dt) => !selected.includes(dt) && dt.toLowerCase().includes(q))
 			.slice(0, 10);
 	});
@@ -104,7 +113,7 @@
 	 *  suppress the "Use as custom" line so we don't show the same
 	 *  suggestion twice. */
 	let exactMatch = $derived(
-		TYPEAHEAD_POOL.some((dt) => dt === customInput.trim()),
+		searchPool.some((dt) => dt === customInput.trim()),
 	);
 
 	function add(name: string) {
