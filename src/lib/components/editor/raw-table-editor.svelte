@@ -106,7 +106,10 @@
 
 	let dctapLines = $derived.by((): DctapLine[] => {
 		if (flavor !== 'dctap') return [];
-		const rows = buildDctapRows(project);
+		// `includeEmptyStatements: true` keeps placeholder rows visible
+		// so the user can fill in the propertyID of a freshly-added
+		// statement. The default DCTAP file-format output omits them.
+		const rows = buildDctapRows(project, { includeEmptyStatements: true });
 		const lines: DctapLine[] = [];
 		let currentDescIdx = -1;
 		let stmtCountInDesc = 0;

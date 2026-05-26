@@ -217,15 +217,24 @@ function normaliseFacetName(lower: string): string {
  * `shapeID`, `shapeLabel`, and optionally `note`.
  *
  * @param project - The Tapir project to export.
+ * @param options - When `includeEmptyStatements` is true, statements
+ *   with an empty `propertyId` are emitted as blank rows rather than
+ *   skipped. The default (false) matches the DCTAP CSV file format —
+ *   spec-conforming output omits incomplete statements. The Raw Table
+ *   editor passes true so users can see and fill in unfinished rows.
  * @returns Array of row objects with DCTAP column keys.
  *
  * @example
  * const rows = buildDctapRows(project);
  * // Serialise rows to CSV, TSV, or Excel...
  */
-export function buildDctapRows(project: TapirProject): DctapOutputRow[] {
+export function buildDctapRows(
+	project: TapirProject,
+	options: { includeEmptyStatements?: boolean } = {},
+): DctapOutputRow[] {
 	const descriptions = project.descriptions || [];
 	const rows: DctapOutputRow[] = [];
+	const includeEmpty = options.includeEmptyStatements === true;
 
 	for (const desc of descriptions) {
 		const statements = desc.statements || [];
@@ -250,7 +259,7 @@ export function buildDctapRows(project: TapirProject): DctapOutputRow[] {
 
 		for (let i = 0; i < statements.length; i++) {
 			const stmt = statements[i];
-			if (!stmt.propertyId) continue;
+			if (!stmt.propertyId && !includeEmpty) continue;
 
 			const { valueConstraint, valueConstraintType } = toValueConstraint(stmt);
 
