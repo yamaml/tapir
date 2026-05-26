@@ -134,7 +134,7 @@
 		<div class="flex gap-2 items-center">
 			<Input
 				bind:value={newLabel}
-				placeholder="Version label..."
+				placeholder="e.g. Before refactor of Person shape"
 				class="h-8 text-sm flex-1"
 				maxlength={100}
 				onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter') handleSaveVersion(); }}

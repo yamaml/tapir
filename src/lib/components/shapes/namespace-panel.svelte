@@ -374,7 +374,7 @@
 								type="text"
 								bind:value={editPrefix}
 								onkeydown={handleEditKeydown}
-								placeholder="prefix"
+								placeholder="e.g. foaf"
 								class="block w-full h-6 px-1.5 text-[11px] font-mono bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-ring"
 								autofocus
 							/>
@@ -500,7 +500,7 @@
 					onkeydown={handlePrefixKeydown}
 					onfocus={handlePrefixFocus}
 					onblur={handlePrefixBlur}
-					placeholder="prefix"
+					placeholder="e.g. foaf"
 					autocomplete="off"
 					role="combobox"
 					aria-expanded={showPrefixSuggestions}

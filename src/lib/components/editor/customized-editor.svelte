@@ -250,7 +250,7 @@
 						bind:value={descName}
 						onblur={handleDescUpdate}
 						class="h-8 text-sm {nameReadonly ? 'opacity-60' : ''}"
-						placeholder={flavor === 'dctap' ? 'shapeID' : labels.descriptionSingular + ' name'}
+						placeholder={flavor === 'dctap' ? 'e.g. PersonShape' : 'e.g. Person'}
 						readonly={nameReadonly}
 					/>
 				</div>
@@ -268,7 +268,7 @@
 						<PropertyAutocomplete
 							value={descTargetClass}
 							type="C"
-							placeholder="prefix:ClassName"
+							placeholder="e.g. foaf:Person"
 							onchange={(val) => { descTargetClass = val; handleDescUpdate(); handleFieldValidation('targetClass', 'targetClass', val); }}
 						/>
 						<FieldError message={fieldErrors.targetClass} />
@@ -434,7 +434,7 @@
 							oninput={(e: Event) => handleStmtField(stmt.id, 'label', (e.target as HTMLInputElement).value)}
 							onblur={(e: Event) => handleStmtField(stmt.id, 'label', (e.target as HTMLInputElement).value)}
 							class="h-7 text-xs"
-							placeholder={flavor === 'simpledsp' ? 'Name (required)' : 'Label'}
+							placeholder={flavor === 'simpledsp' ? 'e.g. Title (required)' : 'e.g. Title'}
 						/>
 						{#if flavor === 'simpledsp' && !stmt.label}
 							<FieldError message="Name is required (used to build the statement URI)" />
@@ -452,7 +452,7 @@
 						<PropertyAutocomplete
 							value={stmt.propertyId}
 							type="P"
-							placeholder={flavor === 'dctap' ? 'propertyID (required)' : 'prefix:property (required)'}
+							placeholder={flavor === 'dctap' ? 'e.g. dcterms:title (required)' : 'e.g. dcterms:title (required)'}
 							onchange={(val) => { handleStmtField(stmt.id, 'propertyId', val); handleFieldValidation(`${stmt.id}-property`, 'property', val); }}
 						/>
 						{#if !stmt.propertyId}
@@ -742,7 +742,7 @@
 							oninput={(e: Event) => handleStmtField(stmt.id, 'note', (e.target as HTMLInputElement).value)}
 							onblur={(e: Event) => handleStmtField(stmt.id, 'note', (e.target as HTMLInputElement).value)}
 							class="h-7 text-xs"
-							placeholder="Note"
+							placeholder="Optional comment"
 						/>
 					</div>
 				</div>

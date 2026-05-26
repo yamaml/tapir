@@ -494,7 +494,7 @@
 										<!-- Smart: PropertyAutocomplete -->
 										<PropertyAutocomplete
 											value={editValue}
-											placeholder="prefix:term"
+											placeholder="e.g. dcterms:title"
 											type="P"
 											class="w-full"
 											onchange={(v) => { editValue = v; }}

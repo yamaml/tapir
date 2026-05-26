@@ -420,7 +420,7 @@
 						bind:value={freeText}
 						onfocus={initFreeText}
 						onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter') commitFreeText(); }}
-						placeholder={'"val1" "val2" or xsd:type'}
+						placeholder={'e.g. xsd:date or "red" "green" "blue"'}
 						class="flex-1 h-6 px-1.5 text-[11px] font-mono bg-background border border-input rounded focus:outline-none focus:ring-1 focus:ring-ring"
 					/>
 					<button
@@ -500,7 +500,7 @@
 							bind:value={freeText}
 							onfocus={initFreeText}
 							onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter') commitFreeText(); }}
-							placeholder="prefix:term prefix:term"
+							placeholder="e.g. ndlsh: bsh: or card:VISA card:AMEX"
 							class="flex-1 h-6 px-1.5 text-[11px] font-mono bg-background border border-input rounded focus:outline-none focus:ring-1 focus:ring-ring"
 						/>
 						<button
@@ -521,7 +521,7 @@
 				bind:value={freeText}
 				onfocus={initFreeText}
 				onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter') commitFreeText(); }}
-				placeholder="constraint"
+				placeholder="constraint value"
 				class="flex-1 h-6 px-1.5 text-[11px] font-mono bg-background border border-input rounded focus:outline-none focus:ring-1 focus:ring-ring"
 			/>
 			<button

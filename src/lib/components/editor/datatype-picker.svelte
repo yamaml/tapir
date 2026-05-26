@@ -140,7 +140,7 @@
 							type="text"
 							bind:value={customInput}
 							onkeydown={onCustomKeydown}
-							placeholder="prefix:term"
+							placeholder="e.g. edtf:EDTF"
 							class="flex-1 min-w-0 h-6 px-1.5 text-xs font-mono bg-background border border-input rounded focus:outline-none focus:ring-1 focus:ring-ring"
 						/>
 						<button

@@ -770,7 +770,7 @@
 							onkeydown={handlePrefixKeydown}
 							onfocus={handlePrefixFocus}
 							onblur={handlePrefixBlur}
-							placeholder="prefix"
+							placeholder="e.g. foaf"
 							autocomplete="off"
 							role="combobox"
 							aria-expanded={showPrefixSuggestions}
