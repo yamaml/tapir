@@ -31,17 +31,26 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
+# Opt into Node 24 for actions that haven't yet shipped Node-24
+# releases (configure-pages, upload-pages-artifact, deploy-pages).
+# GitHub's deprecation notice for Node 20 lands September 2026; until
+# those actions publish Node-24 versions, this env var keeps the
+# workflow on a supported runtime without emitting deprecation
+# warnings on every run.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
 
       - name: Install dependencies
