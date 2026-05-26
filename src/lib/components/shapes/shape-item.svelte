@@ -1,10 +1,12 @@
 <script lang="ts">
 	import type { Description, Flavor } from '$lib/types';
-	import { updateDescription } from '$lib/stores';
+	import { removeDescription, updateDescription } from '$lib/stores';
 	import { Badge } from '$lib/components/ui/badge';
+	import { Button } from '$lib/components/ui/button';
 	import Check from 'lucide-svelte/icons/check';
 	import Lock from 'lucide-svelte/icons/lock';
 	import GripVertical from 'lucide-svelte/icons/grip-vertical';
+	import Trash2 from 'lucide-svelte/icons/trash-2';
 	import Tip from '$lib/components/ui/tip.svelte';
 
 	interface Props {
@@ -19,8 +21,10 @@
 
 	let editing = $state(false);
 	let editName = $state('');
+	let confirmingDelete = $state(false);
 
-	/** MAIN cannot be renamed in SimpleDSP — it's a fixed spec requirement. */
+	/** MAIN cannot be renamed or removed in SimpleDSP — it's a fixed
+	 *  spec requirement and other shapes reference it implicitly. */
 	let isMainLocked = $derived(isFirst && flavor === 'simpledsp');
 
 	function startRename() {
@@ -44,6 +48,10 @@
 		} else if (e.key === 'Escape') {
 			editing = false;
 		}
+	}
+
+	function confirmDelete() {
+		removeDescription(description.id);
 	}
 </script>
 
@@ -88,9 +96,48 @@
 							{/if}
 						</span>
 					</Tip>
-					<Badge variant="secondary" class="shrink-0 text-[9px] px-1 py-0 h-3.5 font-normal tabular-nums">
-						{description.statements.length}
-					</Badge>
+					<div class="flex items-center gap-1 shrink-0">
+						{#if confirmingDelete}
+							<!--
+								Inline confirm. Same pattern as the
+								version-history dialog so the visual
+								language of destructive actions stays
+								consistent across the editor.
+							-->
+							<span class="text-[10px] text-muted-foreground">Delete?</span>
+							<Button
+								size="sm"
+								class="h-5 px-1.5 text-[10px]"
+								onclick={(e: MouseEvent) => { e.stopPropagation(); confirmDelete(); }}
+							>
+								Yes
+							</Button>
+							<Button
+								size="sm"
+								variant="ghost"
+								class="h-5 px-1.5 text-[10px]"
+								onclick={(e: MouseEvent) => { e.stopPropagation(); confirmingDelete = false; }}
+							>
+								No
+							</Button>
+						{:else}
+							<Badge variant="secondary" class="shrink-0 text-[9px] px-1 py-0 h-3.5 font-normal tabular-nums">
+								{description.statements.length}
+							</Badge>
+							{#if !isMainLocked}
+								<Tip text="Delete shape">
+									<button
+										type="button"
+										class="rounded p-0.5 text-muted-foreground/0 group-hover:text-muted-foreground hover:text-destructive transition-colors [&_svg]:pointer-events-none"
+										onclick={(e: MouseEvent) => { e.stopPropagation(); confirmingDelete = true; }}
+										aria-label="Delete shape"
+									>
+										<Trash2 class="h-3 w-3" />
+									</button>
+								</Tip>
+							{/if}
+						{/if}
+					</div>
 				{/if}
 			</div>
 			{#if !editing && description.targetClass}
