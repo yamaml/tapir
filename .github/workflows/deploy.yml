@@ -31,15 +31,6 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
-# Opt into Node 24 for actions that haven't yet shipped Node-24
-# releases (configure-pages, upload-pages-artifact, deploy-pages).
-# GitHub's deprecation notice for Node 20 lands September 2026; until
-# those actions publish Node-24 versions, this env var keeps the
-# workflow on a supported runtime without emitting deprecation
-# warnings on every run.
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -73,10 +64,10 @@ jobs:
         run: npm run build
 
       - name: Configure Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: ./build
 
@@ -89,4 +80,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
