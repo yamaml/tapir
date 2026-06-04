@@ -1,0 +1,35 @@
+[@NS]
+schema	http://schema.org/
+foaf	http://xmlns.com/foaf/0.1/
+rdfs	http://www.w3.org/2000/01/rdf-schema#
+xsd	http://www.w3.org/2001/XMLSchema#
+@base	http://purl.org/yama/examples/2022/tbbt/0.1/
+
+[MAIN]
+#Name	Property	Min	Max	ValueType	Constraint	Comment
+ID	foaf:Person	1	1	ID	http://purl.org/yama/examples/2022/tbbt/0.1/	Details of the character
+Name	foaf:name	1	1	literal	xsd:string	Name of the character
+Family Name	foaf:familyName	1	1	literal	xsd:string	Family Name of the character
+First Name	foaf:firstName	1	1	literal	xsd:string	First Name of the character
+Additional Name	schema:additionalName	0	1	literal	xsd:string	Additional name of the character
+Job Title	schema:jobTitle	0	1	literal	xsd:string	Job title of the character
+Address	schema:address	0	1	structured	#address	Address of the character
+Parents	schema:parent	0	-	structured	#MAIN	Parents of the character
+Children	schema:children	0	-	structured	#MAIN	Children of the character
+Knows	foaf:knows	0	-	structured	#MAIN	This character knows these other characters
+Portrayed by	schema:byArtist	0	1	structured	#artist	This character is portrayed by
+Wikidata	rdfs:seeAlso	0	-	IRI		Wikidata entity for the character
+
+[address]
+#Name	Property	Min	Max	ValueType	Constraint	Comment
+Street	schema:streetAddress	0	1	literal	xsd:string	Building and street address
+Locality	schema:addressLocality	0	1	literal	xsd:string
+State	schema:addressRegion	0	1	literal	xsd:string
+Country	schema:addressCountry	0	1	literal	xsd:string
+Postal Code	schema:postalCode	0	1	literal	xsd:string
+
+[artist]
+#Name	Property	Min	Max	ValueType	Constraint	Comment
+ID	foaf:Person	1	1	ID	http://purl.org/yama/examples/2022/tbbt/0.1/	The actor portraying the character
+Name	schema:name	1	1	literal	xsd:string	Name of the artist
+Wikidata	rdfs:isDefinedBy	0	-	IRI		Wikidata entity for the artist

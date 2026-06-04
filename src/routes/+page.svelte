@@ -17,14 +17,36 @@
 	} from '$lib/components/ui/dialog';
 	import { duplicateProject, deleteProject } from '$lib/db';
 	import Plus from 'lucide-svelte/icons/plus';
+	import Sparkles from 'lucide-svelte/icons/sparkles';
 	import FileText from 'lucide-svelte/icons/file-text';
 	import ChevronRight from 'lucide-svelte/icons/chevron-right';
 	import Copy from 'lucide-svelte/icons/copy';
 	import Trash2 from 'lucide-svelte/icons/trash-2';
 	import Tip from '$lib/components/ui/tip.svelte';
 	import NewProjectDialog from '$lib/components/dashboard/new-project-dialog.svelte';
+	import { EXAMPLES } from '$lib/examples';
+	import type { Flavor } from '$lib/types';
+
+	// Empty-state quick-start buttons, grouped by flavor. Generated from
+	// the example registry so adding an example needs no change here.
+	const EXAMPLE_GROUPS: { flavor: Flavor; label: string; examples: typeof EXAMPLES }[] = (
+		['simpledsp', 'dctap'] as const
+	)
+		.map((flavor) => ({
+			flavor,
+			label: flavor === 'simpledsp' ? 'SimpleDSP' : 'DCTAP',
+			examples: EXAMPLES.filter((e) => e.flavor === flavor),
+		}))
+		.filter((g) => g.examples.length > 0);
 
 	let showNewProject = $state(false);
+	let pendingExampleId = $state<string | undefined>(undefined);
+
+	// Clear the preselected example once the dialog has closed so the
+	// next plain "New Project" open starts blank.
+	$effect(() => {
+		if (!showNewProject) pendingExampleId = undefined;
+	});
 
 	// Delete confirmation state. When `deleteTarget` is non-null, the
 	// confirm dialog opens. We keep the name around for display after
@@ -40,6 +62,12 @@
 		e.stopPropagation();
 		await duplicateProject(projectId);
 		await refreshProjectsList();
+	}
+
+	/** Preselects an example, then opens the New Project dialog on its Example tab. */
+	function openWithExample(id: string) {
+		pendingExampleId = id;
+		showNewProject = true;
 	}
 
 	function handleDeleteClick(e: MouseEvent, projectId: string, projectName: string) {
@@ -97,6 +125,20 @@
 					<Plus class="mr-2 h-5 w-5" />
 					New Project
 				</Button>
+			</div>
+			<div class="mt-6 grid gap-3">
+				<p class="text-xs text-muted-foreground">Or start from an example:</p>
+				{#each EXAMPLE_GROUPS as group (group.flavor)}
+					<div class="flex flex-wrap items-center justify-center gap-2">
+						<span class="text-xs font-medium text-muted-foreground">{group.label}</span>
+						{#each group.examples as ex (ex.id)}
+							<Button variant="outline" size="sm" onclick={() => openWithExample(ex.id)}>
+								<Sparkles class="mr-1.5 h-4 w-4" />
+								{ex.shortLabel}
+							</Button>
+						{/each}
+					</div>
+				{/each}
 			</div>
 		</div>
 	{:else}
@@ -177,7 +219,7 @@
 	{/if}
 </div>
 
-<NewProjectDialog bind:open={showNewProject} />
+<NewProjectDialog bind:open={showNewProject} initialExampleId={pendingExampleId} />
 
 <Dialog
 	open={deleteTarget !== null}

@@ -1,0 +1,22 @@
+shapeID,shapeLabel,propertyID,propertyLabel,mandatory,repeatable,valueNodeType,valueDatatype,valueShape,valueConstraint,valueConstraintType,note
+Character,Character,rdf:type,Class,TRUE,FALSE,IRI,,,foaf:Person,,The class is always foaf:Person.
+,,foaf:name,Name,TRUE,FALSE,literal,xsd:string,,,,Name of the character.
+,,foaf:familyName,Family Name,TRUE,FALSE,literal,xsd:string,,,,Family name of the character.
+,,foaf:firstName,First Name,TRUE,FALSE,literal,xsd:string,,,,First name of the character.
+,,schema:additionalName,Additional Name,FALSE,FALSE,literal,xsd:string,,,,Additional name of the character.
+,,schema:jobTitle,Job Title,FALSE,FALSE,literal,xsd:string,,,,Job title of the character.
+,,schema:address,Address,FALSE,FALSE,bnode,,Address,,,Address of the character.
+,,schema:parent,Parents,FALSE,TRUE,IRI,,Character,,,Parents of the character.
+,,schema:children,Children,FALSE,TRUE,IRI,,Character,,,Children of the character.
+,,foaf:knows,Knows,FALSE,TRUE,IRI,,Character,,,Other characters this character knows.
+,,schema:byArtist,Portrayed by,FALSE,FALSE,IRI,,Artist,,,The actor who portrays this character.
+,,rdfs:seeAlso,Wikidata,FALSE,TRUE,IRI,,,,,Wikidata entity for the character.
+Address,Address,rdf:type,Class,TRUE,FALSE,IRI,,,schema:PostalAddress,,The class is always schema:PostalAddress.
+,,schema:streetAddress,Street,FALSE,FALSE,literal,xsd:string,,,,Building and street address.
+,,schema:addressLocality,Locality,FALSE,FALSE,literal,xsd:string,,,,
+,,schema:addressRegion,State,FALSE,FALSE,literal,xsd:string,,,,
+,,schema:addressCountry,Country,FALSE,FALSE,literal,xsd:string,,,,
+,,schema:postalCode,Postal Code,FALSE,FALSE,literal,xsd:string,,,,
+Artist,Artist,rdf:type,Class,TRUE,FALSE,IRI,,,foaf:Person,,The actor portraying the character.
+,,schema:name,Name,TRUE,FALSE,literal,xsd:string,,,,Name of the artist.
+,,rdfs:isDefinedBy,Wikidata,FALSE,TRUE,IRI,,,,,Wikidata entity for the artist.

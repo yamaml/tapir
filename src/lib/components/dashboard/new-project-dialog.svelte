@@ -9,6 +9,7 @@
 	import { STANDARD_PREFIXES } from '$lib/converters/simpledsp-generator';
 	import zazukoPrefixes from '@zazuko/prefixes';
 	import { importFile } from '$lib/components/editor/import-handler';
+	import { EXAMPLES, exampleToFile, type ProfileExample } from '$lib/examples';
 	import {
 		loadProfileFromUrl,
 		rewriteForgeBlobUrl,
@@ -36,21 +37,45 @@
 	import Link from 'lucide-svelte/icons/link';
 	import Loader from 'lucide-svelte/icons/loader-circle';
 	import AlertTriangle from 'lucide-svelte/icons/triangle-alert';
+	import Sparkles from 'lucide-svelte/icons/sparkles';
 	import Tip from '$lib/components/ui/tip.svelte';
 
 	interface Props {
 		open: boolean;
+		/**
+		 * If set when the dialog opens, switch to the Example tab and
+		 * load this example into the preview automatically.
+		 */
+		initialExampleId?: string;
 	}
 
-	let { open = $bindable() }: Props = $props();
+	let { open = $bindable(), initialExampleId }: Props = $props();
 
 	let projectName = $state('');
+	// True while the name is import-derived (auto-filled from a file name).
+	// Once the user edits the name field, this flips false and imports stop
+	// overwriting it. See handleNameInput.
+	let nameAutoDerived = $state(true);
 	let selectedFlavor = $state<Flavor>('simpledsp');
 	let baseIri = $state('');
-	let projectNamespaces = $state<NamespaceMap>({});
 	let creating = $state(false);
 	let newPrefix = $state('');
 	let newUri = $state('');
+
+	// ── Namespace provenance ────────────────────────────────────
+	// Namespaces have two independent sources that must not clobber each
+	// other: prefixes the user adds by hand (quick-add chips / custom
+	// entry) and prefixes contributed by the currently-loaded import.
+	// A new import replaces only the imported set; manual additions
+	// persist across imports. The effective map the rest of the dialog
+	// reads is the union, with manual winning on a prefix collision
+	// (an explicit user choice outranks an import default).
+	let manualNamespaces = $state<NamespaceMap>({});
+	let importedNamespaces = $state<NamespaceMap>({});
+	let projectNamespaces = $derived<NamespaceMap>({
+		...importedNamespaces,
+		...manualNamespaces,
+	});
 
 	// ── Prefix suggestion state ─────────────────────────────────
 	// The prefix input offers an autocomplete dropdown of known
@@ -70,9 +95,10 @@
 	let importErrors = $state<ParseMessage[]>([]);
 	let importing = $state(false);
 	let fileInputEl = $state<HTMLInputElement | null>(null);
+	let selectedExampleId = $state<string | null>(null);
 
 	// ── URL import state ────────────────────────────────────────
-	let activeImportTab = $state<'file' | 'url'>('file');
+	let activeImportTab = $state<'file' | 'url' | 'example'>('file');
 	let urlInput = $state('');
 	let urlLoading = $state(false);
 	let urlError = $state<string | null>(null);
@@ -98,6 +124,12 @@
 		{ prefix: 'org', uri: 'http://www.w3.org/ns/org#', label: 'ORG' },
 		{ prefix: 'rdfs', uri: 'http://www.w3.org/2000/01/rdf-schema#', label: 'RDFS' },
 	];
+
+	// ── Flavor display metadata (example panel) ─────────────────
+	const FLAVOR_META = {
+		simpledsp: { label: 'SimpleDSP', dot: 'bg-blue-500', selected: 'border-blue-500 bg-blue-500/10' },
+		dctap: { label: 'DCTAP', dot: 'bg-green-500', selected: 'border-green-500 bg-green-500/10' },
+	} as const;
 
 	let availableCommon = $derived(COMMON.filter((c) => !(c.prefix in projectNamespaces)));
 	let namespaceCount = $derived(Object.keys(projectNamespaces).length);
@@ -158,15 +190,24 @@
 
 	function resetForm() {
 		projectName = '';
+		nameAutoDerived = true;
 		selectedFlavor = 'simpledsp';
-		baseIri = '';
-		projectNamespaces = {};
 		creating = false;
 		newPrefix = '';
 		newUri = '';
+		manualNamespaces = {};
 		clearImport();
+		activeImportTab = 'file';
 	}
 
+	/**
+	 * Clears all state derived from the currently-loaded import (file, URL,
+	 * or example): the parsed project, its namespaces, its base IRI, the
+	 * selected example, and the transient URL fields. User-authored state
+	 * (manual namespaces, a hand-typed project name) is left untouched.
+	 * This runs both when the user removes an import and at the start of a
+	 * new one, so no previous import can bleed into the next.
+	 */
 	function clearImport() {
 		importedFile = null;
 		importedProject = null;
@@ -176,6 +217,15 @@
 		urlInput = '';
 		urlError = null;
 		urlForgeRewriteHint = null;
+		selectedExampleId = null;
+		importedNamespaces = {};
+		baseIri = '';
+		// A removed import should not silently keep changing the create
+		// default flavor; fall back to the dialog default.
+		selectedFlavor = 'simpledsp';
+		// If the name was only ever auto-derived from the (now removed)
+		// import, clear it so the field returns to its placeholder.
+		if (nameAutoDerived) projectName = '';
 		// Also clear the <input type="file"> so the same filename can be re-picked.
 		if (fileInputEl) fileInputEl.value = '';
 	}
@@ -188,10 +238,15 @@
 	 */
 	async function processImportedFile(file: File): Promise<void> {
 		const token = ++importToken;
-		importedFile = file;
+		// Drop everything the previous import contributed before parsing the
+		// new one, so namespaces, base, flavor and selection never accumulate
+		// across loads. Manual namespaces and a user-typed name survive.
+		importedNamespaces = {};
+		baseIri = '';
 		importedProject = null;
 		importWarnings = [];
 		importErrors = [];
+		importedFile = file;
 		importing = true;
 
 		try {
@@ -202,20 +257,16 @@
 			importWarnings = result.warnings;
 			importErrors = result.errors;
 
-			if (!projectName.trim()) {
+			// Re-derive the name on every import unless the user has typed
+			// their own. nameAutoDerived stays true so the next import can
+			// re-derive again.
+			if (nameAutoDerived) {
 				projectName = file.name.replace(/\.[^.]+$/, '');
 			}
 			if (result.project.flavor) selectedFlavor = result.project.flavor;
-			if (result.project.base) baseIri = result.project.base;
-			if (
-				result.project.namespaces &&
-				Object.keys(result.project.namespaces).length > 0
-			) {
-				projectNamespaces = {
-					...projectNamespaces,
-					...result.project.namespaces,
-				};
-			}
+			// Replace (not merge) the import-derived base and namespaces.
+			baseIri = result.project.base ?? '';
+			importedNamespaces = { ...(result.project.namespaces ?? {}) };
 		} catch (err) {
 			if (token !== importToken) return;
 			const message = err instanceof Error ? err.message : String(err);
@@ -239,6 +290,7 @@
 		const trimmed = urlInput.trim();
 		if (!trimmed) return;
 
+		selectedExampleId = null;
 		urlLoading = true;
 		urlError = null;
 		urlForgeRewriteHint = null;
@@ -290,24 +342,60 @@
 		const input = e.target as HTMLInputElement;
 		const file = input.files?.[0];
 		if (!file) return;
+		selectedExampleId = null;
 		await processImportedFile(file);
 	}
 
+	/**
+	 * Loads a bundled example into the dialog preview by routing its
+	 * raw content through the same import path a picked file uses.
+	 */
+	async function loadExample(ex: ProfileExample): Promise<void> {
+		selectedExampleId = ex.id;
+		await processImportedFile(exampleToFile(ex));
+	}
+
+	// When opened with a preselected example (from the dashboard quick
+	// buttons), jump to the Example tab and load it once per open.
+	let loadedExampleForOpen = $state(false);
+	$effect(() => {
+		if (open && initialExampleId && !loadedExampleForOpen) {
+			const ex = EXAMPLES.find((e) => e.id === initialExampleId);
+			if (ex) {
+				activeImportTab = 'example';
+				loadExample(ex);
+			}
+			loadedExampleForOpen = true;
+		}
+		if (!open) {
+			loadedExampleForOpen = false;
+		}
+	});
+
 	function handleQuickAdd(prefix: string, uri: string) {
-		projectNamespaces = { ...projectNamespaces, [prefix]: uri };
+		manualNamespaces = { ...manualNamespaces, [prefix]: uri };
 	}
 
 	function handleRemoveNs(prefix: string) {
-		const updated = { ...projectNamespaces };
-		delete updated[prefix];
-		projectNamespaces = updated;
+		// Remove from both sources so the prefix leaves the effective union,
+		// whether it was a manual addition or contributed by the import.
+		if (prefix in manualNamespaces) {
+			const m = { ...manualNamespaces };
+			delete m[prefix];
+			manualNamespaces = m;
+		}
+		if (prefix in importedNamespaces) {
+			const i = { ...importedNamespaces };
+			delete i[prefix];
+			importedNamespaces = i;
+		}
 	}
 
 	function handleAddCustomNs() {
 		const prefix = newPrefix.trim();
 		const uri = newUri.trim();
 		if (!prefix || !uri) return;
-		projectNamespaces = { ...projectNamespaces, [prefix]: uri };
+		manualNamespaces = { ...manualNamespaces, [prefix]: uri };
 		newPrefix = '';
 		newUri = '';
 	}
@@ -397,6 +485,23 @@
 	}
 
 	/**
+	 * Manual flavor selection. If an import is loaded, its content belongs to
+	 * the previous flavor, so switching flavor discards the import (and its
+	 * namespaces, base, and example selection) to avoid a flavor↔content
+	 * mismatch. With no import loaded this just sets the flavor.
+	 */
+	function handleFlavorSelect(flavor: Flavor) {
+		if (flavor === selectedFlavor) return;
+		if (importedProject) clearImport(); // also resets selectedFlavor to default
+		selectedFlavor = flavor;
+	}
+
+	/** Marks the name as user-authored so imports stop overwriting it. */
+	function handleNameInput() {
+		nameAutoDerived = false;
+	}
+
+	/**
 	 * Keyboard handling for the prefix input: arrows navigate the
 	 * suggestion list, Enter accepts (or submits the row if no
 	 * suggestions are visible), Escape closes the popover.
@@ -455,6 +560,7 @@
 					id="project-name"
 					placeholder="My Application Profile"
 					bind:value={projectName}
+					oninput={handleNameInput}
 					onkeydown={handleKeydown}
 					aria-invalid={nameDuplicate ? 'true' : undefined}
 					class={nameDuplicate ? 'border-destructive focus-visible:ring-destructive' : ''}
@@ -489,6 +595,15 @@
 						onclick={() => (activeImportTab = 'url')}
 					>
 						URL
+					</button>
+					<button
+						type="button"
+						role="tab"
+						aria-selected={activeImportTab === 'example'}
+						class="px-3 h-7 text-xs rounded-sm transition-colors {activeImportTab === 'example' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'}"
+						onclick={() => (activeImportTab = 'example')}
+					>
+						Example
 					</button>
 				</div>
 
@@ -544,7 +659,7 @@
 						accept=".yaml,.yml,.csv,.tsv,.xlsx"
 						onchange={handleFileSelect}
 					/>
-				{:else}
+				{:else if activeImportTab === 'url'}
 					<!-- URL tab -->
 					<div class="flex gap-2">
 						<div class="relative flex-1">
@@ -611,6 +726,35 @@
 							</Tip>
 						</div>
 					{/if}
+				{:else if activeImportTab === 'example'}
+					<div class="grid gap-3">
+						{#each ['simpledsp', 'dctap'] as const as flavor}
+							{@const items = EXAMPLES.filter((e) => e.flavor === flavor)}
+							{#if items.length > 0}
+								<div class="grid gap-1.5">
+									<div class="flex items-center gap-2">
+										<div class="h-2.5 w-2.5 rounded-full {FLAVOR_META[flavor].dot}"></div>
+										<span class="text-xs font-medium text-muted-foreground">
+											{FLAVOR_META[flavor].label}
+										</span>
+									</div>
+									{#each items as ex (ex.id)}
+										<button
+											type="button"
+											class="group flex items-center gap-3 rounded-lg border-2 border-border p-3 text-left transition-colors hover:border-muted-foreground/30 {selectedExampleId === ex.id ? FLAVOR_META[flavor].selected : ''}"
+											onclick={() => loadExample(ex)}
+										>
+											<div class="min-w-0 flex-1">
+												<div class="text-sm font-medium text-foreground">{ex.title}</div>
+												<p class="mt-0.5 text-xs text-muted-foreground leading-snug">{ex.description}</p>
+											</div>
+											<Sparkles class="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+										</button>
+									{/each}
+								</div>
+							{/if}
+						{/each}
+					</div>
 				{/if}
 
 				<!-- Shared advisory blocks (warnings / errors / empty parse). -->
@@ -682,7 +826,7 @@
 						class="rounded-lg border-2 p-3 text-left transition-colors {selectedFlavor === 'simpledsp'
 							? 'border-blue-500 bg-blue-500/10'
 							: 'border-border hover:border-muted-foreground/30'}"
-						onclick={() => (selectedFlavor = 'simpledsp')}
+						onclick={() => handleFlavorSelect('simpledsp')}
 					>
 						<div class="flex items-center gap-2">
 							<div class="h-2.5 w-2.5 rounded-full bg-blue-500"></div>
@@ -697,7 +841,7 @@
 						class="rounded-lg border-2 p-3 text-left transition-colors {selectedFlavor === 'dctap'
 							? 'border-green-500 bg-green-500/10'
 							: 'border-border hover:border-muted-foreground/30'}"
-						onclick={() => (selectedFlavor = 'dctap')}
+						onclick={() => handleFlavorSelect('dctap')}
 					>
 						<div class="flex items-center gap-2">
 							<div class="h-2.5 w-2.5 rounded-full bg-green-500"></div>

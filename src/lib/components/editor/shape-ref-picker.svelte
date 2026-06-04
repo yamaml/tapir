@@ -1,11 +1,12 @@
 <!--
 	Multi-select shape reference picker.
 
-	Renders the currently selected shape refs as removable chips
-	on a single horizontal row. When at least one chip is present,
-	the "Add shape" affordance collapses to a compact `+` icon to
-	keep row height fixed; an empty field shows the full label.
-	Long selections scroll horizontally rather than wrapping.
+	Renders the currently selected shape refs as removable chips.
+	When at least one chip is present, the "Add shape" affordance
+	collapses to a compact `+` icon. The `wrap` prop chooses the
+	layout: single-line horizontal scroll (default, for dense table
+	cells) or multi-line wrapping (for the roomy Customized card,
+	where scrolling would hide chips and the `+` button).
 
 	Used by the Customized editor (both flavours: SimpleDSP `structured`
 	and DCTAP `valueShape`) and by the Smart Table cell popover.
@@ -31,9 +32,23 @@
 		chipPrefix?: string;
 		/** Placeholder when no shape is selected. */
 		placeholder?: string;
+		/**
+		 * Chip layout. `false` (default) keeps the chips on a single
+		 * fixed-height row that scrolls horizontally — right for table
+		 * cells. `true` lets chips wrap onto multiple lines and the field
+		 * grow taller — right for the Customized card.
+		 */
+		wrap?: boolean;
 	}
 
-	let { selected, options, onchange, chipPrefix = '', placeholder = '(none)' }: Props = $props();
+	let {
+		selected,
+		options,
+		onchange,
+		chipPrefix = '',
+		placeholder = '(none)',
+		wrap = false,
+	}: Props = $props();
 
 	let open = $state(false);
 
@@ -68,15 +83,22 @@
 </style>
 
 <div
-	class="group flex items-center gap-1 rounded-md border border-input bg-background px-1.5 h-7 overflow-hidden"
+	class="group flex gap-1 rounded-md border border-input bg-background px-1.5 {wrap
+		? 'flex-wrap items-start min-h-7 py-1'
+		: 'items-center h-7 overflow-hidden'}"
 >
 	<!--
-		Scrollable chip row. `flex-nowrap` keeps the row single-line;
-		`overflow-x-auto` lets wide selections scroll. `min-w-0` is
-		needed so the row can actually shrink below its content width
-		inside a flex parent.
+		Chip row. When `wrap` is false the row stays single-line and
+		scrolls (`overflow-x-auto`); `min-w-0` lets it shrink below its
+		content width inside the flex parent. When `wrap` is true the
+		chips and `+` button flow onto multiple lines via the parent's
+		`flex-wrap`, and the field grows taller.
 	-->
-	<div class="chip-scroll flex items-center gap-1 flex-1 min-w-0 overflow-x-auto">
+	<div
+		class="flex items-center gap-1 {wrap
+			? 'flex-wrap'
+			: 'chip-scroll flex-1 min-w-0 overflow-x-auto'}"
+	>
 		{#if selected.length === 0}
 			<span class="text-[10px] text-muted-foreground italic px-1 shrink-0">
 				{placeholder}

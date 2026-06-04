@@ -1,0 +1,103 @@
+[@NS]
+dct	http://purl.org/dc/terms/
+bibo	http://purl.org/ontology/bibo/
+srap	http://example.org/srap/
+edtf	http://id.loc.gov/datatypes/EDTFScheme/
+xsd	http://www.w3.org/2001/XMLSchema#
+coar_rt	http://purl.org/coar/resource_type/
+coar_ver	http://purl.org/coar/version/
+coar_ar	http://purl.org/coar/access_right/
+relators	http://id.loc.gov/vocabulary/relators/
+
+[MAIN]
+#Name	Property	Min	Max	ValueType	Constraint	Comment
+ID	srap:SRAPResource	1	1	ID		The class will always be srap:SRAPResource.
+Type	dct:type	0	-	IRI	coar_rt:	Resource type, using the COAR Resource Types vocabulary.
+Language	dct:language	0	-	literal	xsd:string	A language of the resource.
+Creator	dct:creator	0	-	structured	#Person #Organization	An entity responsible for making the resource.
+Creator	dct:creator	0	-	literal		The name of an entity responsible for making the resource.
+Contributor	dct:contributor	0	-	structured	#Person #Organization	An entity responsible for making contributions to the resource.
+Contributor	dct:contributor	0	-	literal		The name of an entity responsible for making contributions to the resource.
+Contribution	bibo:contribution	0	-	structured	#Contribution	A detailed description of the contribution.
+Publisher	dct:publisher	0	-	structured	#Organization	An entity responsible for making the resource available.
+Publisher	dct:publisher	0	-	literal		The name of an entity responsible for making the resource available.
+Title	dct:title	0	-	literal		A name given to the resource.
+Format	dct:format	0	-	literal		The file format, physical medium, or dimensions of the resource.
+Subject	dct:subject	0	-	IRI		The topic of the resource; a concept from a controlled vocabulary such as LCSH or MeSH.
+Abstract	dct:abstract	0	-	literal	xsd:string	A summary of the resource.
+Table of Contents	dct:tableOfContents	0	-	literal	xsd:string	A list of subunits of the resource.
+Description	dct:description	0	-	literal	xsd:string	An account of the resource.
+Presented At	bibo:presentedAt	0	-	IRI		Conference, workshop or other scientific event where the resource was presented.
+Bibliographic Citation	dct:bibliographicCitation	0	-	literal	xsd:string	A bibliographic reference for the resource.
+Relation	dct:relation	0	-	IRI		A name or identifier of a related resource.
+Relation	dct:relation	0	-	structured	#MAIN	A SRAPResource description of a related resource.
+Is Part Of	dct:isPartOf	0	-	structured	#Periodical #Book	A related resource in which the described resource is included.
+Date	dct:date	0	-	literal	xsd:gYear xsd:gYearMonth xsd:date	Date associated with the resource. Use more specific dates if available.
+Date Issued	dct:issued	0	-	literal	xsd:gYear xsd:gYearMonth xsd:date	Date of formal issuance of the resource.
+Date Modified	dct:modified	0	-	literal	xsd:gYear xsd:gYearMonth xsd:date	Date on which the resource was changed.
+Date Accepted	dct:dateAccepted	0	-	literal	xsd:gYear xsd:gYearMonth xsd:date	Date of acceptance of the resource.
+Date Retracted	srap:dateRetracted	0	-	literal	xsd:gYear xsd:gYearMonth xsd:date	Date when the resource was retracted or withdrawn.
+Version Type	srap:versionType	0	-	IRI	coar_ver:	Version type, using the COAR Version Types vocabulary.
+Embargo Date Range	srap:embargoDateRange	0	-	literal	edtf:EDTF	A period of time during which the resource is under embargo.
+Identifier	dct:identifier	0	-	IRI		URI, one for each identifier the resource has, provided separately.
+ISBN	bibo:isbn	0	-	literal	xsd:string	The International Standard Book Number of the resource.
+URL	srap:url	0	-	IRI		URL where the electronic resource or a part of it can be retrieved.
+Volume	bibo:volume	0	-	literal	xsd:string	A volume number of the periodical where this article was published.
+Issue	bibo:issue	0	-	literal	xsd:string	An issue number of the periodical that this article was published in.
+Start page	bibo:pageStart	0	-	literal	xsd:string	Starting page number within a continuous page range.
+End page	bibo:pageEnd	0	-	literal	xsd:string	Ending page number within a continuous page range.
+Access Rights	dct:accessRights	0	-	IRI	coar_ar:	Access status of the resource, using the COAR Access Rights vocabulary.
+License	dct:license	0	-	IRI		A legal document giving official permission to do something with the resource.
+Rights	dct:rights	0	-	IRI		Information about rights held in and over the resource.
+Rights Holder	dct:rightsHolder	0	-	literal		A person or organization owning or managing rights over the resource.
+Rights Holder	dct:rightsHolder	0	-	structured	#Person #Organization	A person or organization owning or managing rights over the resource.
+Accessibility statement	srap:accessibilityStatement	0	-	IRI		Information describing the accessibility features of a resource.
+Project identifier	srap:project	0	-	IRI		A RAiD handle or other identifier for the project.
+Funding	srap:funding	0	-	structured	#Grant	A grant that directly or indirectly provides funding for the resource.
+Scholarly Unit	srap:scholarlyUnit	0	-	structured	#Organization	Organization or unit where the scholarly activity was conducted.
+
+[Contribution]
+#Name	Property	Min	Max	ValueType	Constraint	Comment
+ID	bibo:Contribution	1	1	ID		The class will always be bibo:Contribution.
+Agent	bibo:agent	0	-	structured	#Person #Organization	An entity responsible for making contributions to the resource.
+Agent	bibo:agent	0	-	literal		The name of an entity responsible for making contributions to the resource.
+Role	bibo:role	0	-	IRI	relators:	The role of the person, expressed using MARC relators.
+Role	bibo:role	0	-	literal	xsd:string	The role of the person, expressed using a string literal.
+Affiliation	bibo:affiliation	0	-	structured	#Organization	An organization to which an agent was affiliated when the resource was created.
+
+[Person]
+#Name	Property	Min	Max	ValueType	Constraint	Comment
+ID	srap:Person	1	1	ID		The class will always be srap:Person.
+Name	srap:name	0	-	literal	xsd:string	Name of person.
+Identifier	dct:identifier	0	-	IRI		Identifier for the person, such as ORCID.
+
+[Organization]
+#Name	Property	Min	Max	ValueType	Constraint	Comment
+ID	srap:Organization	1	1	ID		The class will always be srap:Organization.
+Name	srap:name	0	-	literal	xsd:string	Name of the organization.
+Identifier	dct:identifier	0	-	IRI		Identifier for the organization.
+
+[Grant]
+#Name	Property	Min	Max	ValueType	Constraint	Comment
+ID	srap:Grant	1	1	ID		The class will always be srap:Grant.
+Funder	srap:funder	0	-	IRI		The name or identifier of the funder.
+Funder	srap:funder	0	-	structured	#Organization	Information about the funder.
+Grant identifier	dct:identifier	0	-	literal	xsd:string	An identifier for the grant or other funding.
+
+[Periodical]
+#Name	Property	Min	Max	ValueType	Constraint	Comment
+ID	bibo:Periodical	1	1	ID		Class is bibo:Periodical or a subclass such as bibo:Journal.
+Title	dct:title	0	-	literal	xsd:string	A name given to the resource. Titles in different languages provided separately.
+Publisher	dct:publisher	0	-	structured	#Organization	Name of the publisher.
+ISSN	bibo:issn	0	-	literal	xsd:string	The ISSN identifying the printed version of the serial publication.
+E-ISSN	bibo:eissn	0	-	literal	xsd:string	The ISSN identifying the electronic version of the serial publication.
+
+[Book]
+#Name	Property	Min	Max	ValueType	Constraint	Comment
+ID	bibo:Book	1	1	ID		Class is bibo:Book or a subclass such as bibo:Proceedings.
+Contributor	dct:contributor	0	-	structured	#Person #Organization	A contributor to the book, either a person or an organization.
+Contributor	dct:contributor	0	-	literal		The name of an entity responsible for making contributions to the resource.
+Contribution	bibo:contribution	0	-	structured	#Contribution	A detailed description of the contribution.
+Publisher	dct:publisher	0	-	structured	#Organization	The publisher of the book.
+Date	dct:date	0	-	literal	xsd:string	Date of publication.
+ISBN	bibo:isbn	0	-	literal	xsd:string	The International Standard Book Number of the resource.
