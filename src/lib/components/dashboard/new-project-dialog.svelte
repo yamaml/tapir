@@ -52,12 +52,30 @@
 	let { open = $bindable(), initialExampleId }: Props = $props();
 
 	let projectName = $state('');
+	// True while the name is import-derived (auto-filled from a file name).
+	// Once the user edits the name field, this flips false and imports stop
+	// overwriting it. See handleNameInput.
+	let nameAutoDerived = $state(true);
 	let selectedFlavor = $state<Flavor>('simpledsp');
 	let baseIri = $state('');
-	let projectNamespaces = $state<NamespaceMap>({});
 	let creating = $state(false);
 	let newPrefix = $state('');
 	let newUri = $state('');
+
+	// ── Namespace provenance ────────────────────────────────────
+	// Namespaces have two independent sources that must not clobber each
+	// other: prefixes the user adds by hand (quick-add chips / custom
+	// entry) and prefixes contributed by the currently-loaded import.
+	// A new import replaces only the imported set; manual additions
+	// persist across imports. The effective map the rest of the dialog
+	// reads is the union, with manual winning on a prefix collision
+	// (an explicit user choice outranks an import default).
+	let manualNamespaces = $state<NamespaceMap>({});
+	let importedNamespaces = $state<NamespaceMap>({});
+	let projectNamespaces = $derived<NamespaceMap>({
+		...importedNamespaces,
+		...manualNamespaces,
+	});
 
 	// ── Prefix suggestion state ─────────────────────────────────
 	// The prefix input offers an autocomplete dropdown of known
@@ -172,17 +190,24 @@
 
 	function resetForm() {
 		projectName = '';
+		nameAutoDerived = true;
 		selectedFlavor = 'simpledsp';
-		baseIri = '';
-		projectNamespaces = {};
 		creating = false;
 		newPrefix = '';
 		newUri = '';
+		manualNamespaces = {};
 		clearImport();
 		activeImportTab = 'file';
-		selectedExampleId = null;
 	}
 
+	/**
+	 * Clears all state derived from the currently-loaded import (file, URL,
+	 * or example): the parsed project, its namespaces, its base IRI, the
+	 * selected example, and the transient URL fields. User-authored state
+	 * (manual namespaces, a hand-typed project name) is left untouched.
+	 * This runs both when the user removes an import and at the start of a
+	 * new one, so no previous import can bleed into the next.
+	 */
 	function clearImport() {
 		importedFile = null;
 		importedProject = null;
@@ -193,6 +218,14 @@
 		urlError = null;
 		urlForgeRewriteHint = null;
 		selectedExampleId = null;
+		importedNamespaces = {};
+		baseIri = '';
+		// A removed import should not silently keep changing the create
+		// default flavor; fall back to the dialog default.
+		selectedFlavor = 'simpledsp';
+		// If the name was only ever auto-derived from the (now removed)
+		// import, clear it so the field returns to its placeholder.
+		if (nameAutoDerived) projectName = '';
 		// Also clear the <input type="file"> so the same filename can be re-picked.
 		if (fileInputEl) fileInputEl.value = '';
 	}
@@ -205,10 +238,15 @@
 	 */
 	async function processImportedFile(file: File): Promise<void> {
 		const token = ++importToken;
-		importedFile = file;
+		// Drop everything the previous import contributed before parsing the
+		// new one, so namespaces, base, flavor and selection never accumulate
+		// across loads. Manual namespaces and a user-typed name survive.
+		importedNamespaces = {};
+		baseIri = '';
 		importedProject = null;
 		importWarnings = [];
 		importErrors = [];
+		importedFile = file;
 		importing = true;
 
 		try {
@@ -219,20 +257,16 @@
 			importWarnings = result.warnings;
 			importErrors = result.errors;
 
-			if (!projectName.trim()) {
+			// Re-derive the name on every import unless the user has typed
+			// their own. nameAutoDerived stays true so the next import can
+			// re-derive again.
+			if (nameAutoDerived) {
 				projectName = file.name.replace(/\.[^.]+$/, '');
 			}
 			if (result.project.flavor) selectedFlavor = result.project.flavor;
-			if (result.project.base) baseIri = result.project.base;
-			if (
-				result.project.namespaces &&
-				Object.keys(result.project.namespaces).length > 0
-			) {
-				projectNamespaces = {
-					...projectNamespaces,
-					...result.project.namespaces,
-				};
-			}
+			// Replace (not merge) the import-derived base and namespaces.
+			baseIri = result.project.base ?? '';
+			importedNamespaces = { ...(result.project.namespaces ?? {}) };
 		} catch (err) {
 			if (token !== importToken) return;
 			const message = err instanceof Error ? err.message : String(err);
@@ -339,20 +373,29 @@
 	});
 
 	function handleQuickAdd(prefix: string, uri: string) {
-		projectNamespaces = { ...projectNamespaces, [prefix]: uri };
+		manualNamespaces = { ...manualNamespaces, [prefix]: uri };
 	}
 
 	function handleRemoveNs(prefix: string) {
-		const updated = { ...projectNamespaces };
-		delete updated[prefix];
-		projectNamespaces = updated;
+		// Remove from both sources so the prefix leaves the effective union,
+		// whether it was a manual addition or contributed by the import.
+		if (prefix in manualNamespaces) {
+			const m = { ...manualNamespaces };
+			delete m[prefix];
+			manualNamespaces = m;
+		}
+		if (prefix in importedNamespaces) {
+			const i = { ...importedNamespaces };
+			delete i[prefix];
+			importedNamespaces = i;
+		}
 	}
 
 	function handleAddCustomNs() {
 		const prefix = newPrefix.trim();
 		const uri = newUri.trim();
 		if (!prefix || !uri) return;
-		projectNamespaces = { ...projectNamespaces, [prefix]: uri };
+		manualNamespaces = { ...manualNamespaces, [prefix]: uri };
 		newPrefix = '';
 		newUri = '';
 	}
@@ -442,6 +485,23 @@
 	}
 
 	/**
+	 * Manual flavor selection. If an import is loaded, its content belongs to
+	 * the previous flavor, so switching flavor discards the import (and its
+	 * namespaces, base, and example selection) to avoid a flavor↔content
+	 * mismatch. With no import loaded this just sets the flavor.
+	 */
+	function handleFlavorSelect(flavor: Flavor) {
+		if (flavor === selectedFlavor) return;
+		if (importedProject) clearImport(); // also resets selectedFlavor to default
+		selectedFlavor = flavor;
+	}
+
+	/** Marks the name as user-authored so imports stop overwriting it. */
+	function handleNameInput() {
+		nameAutoDerived = false;
+	}
+
+	/**
 	 * Keyboard handling for the prefix input: arrows navigate the
 	 * suggestion list, Enter accepts (or submits the row if no
 	 * suggestions are visible), Escape closes the popover.
@@ -500,6 +560,7 @@
 					id="project-name"
 					placeholder="My Application Profile"
 					bind:value={projectName}
+					oninput={handleNameInput}
 					onkeydown={handleKeydown}
 					aria-invalid={nameDuplicate ? 'true' : undefined}
 					class={nameDuplicate ? 'border-destructive focus-visible:ring-destructive' : ''}
@@ -765,7 +826,7 @@
 						class="rounded-lg border-2 p-3 text-left transition-colors {selectedFlavor === 'simpledsp'
 							? 'border-blue-500 bg-blue-500/10'
 							: 'border-border hover:border-muted-foreground/30'}"
-						onclick={() => (selectedFlavor = 'simpledsp')}
+						onclick={() => handleFlavorSelect('simpledsp')}
 					>
 						<div class="flex items-center gap-2">
 							<div class="h-2.5 w-2.5 rounded-full bg-blue-500"></div>
@@ -780,7 +841,7 @@
 						class="rounded-lg border-2 p-3 text-left transition-colors {selectedFlavor === 'dctap'
 							? 'border-green-500 bg-green-500/10'
 							: 'border-border hover:border-muted-foreground/30'}"
-						onclick={() => (selectedFlavor = 'dctap')}
+						onclick={() => handleFlavorSelect('dctap')}
 					>
 						<div class="flex items-center gap-2">
 							<div class="h-2.5 w-2.5 rounded-full bg-green-500"></div>
