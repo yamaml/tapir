@@ -30,9 +30,23 @@
 		onchange: (next: string[]) => void;
 		/** Placeholder when no datatype is selected. */
 		placeholder?: string;
+		/**
+		 * Chip layout. `false` (default) keeps the chips on a single fixed-height
+		 * row that scrolls horizontally — right for dense table cells. `true`
+		 * lets the chips wrap onto multiple lines and the field grow taller —
+		 * right for the roomy Customized card, where horizontal scroll hides
+		 * chips and the `+` button.
+		 */
+		wrap?: boolean;
 	}
 
-	let { selected, options, onchange, placeholder = '(none)' }: Props = $props();
+	let {
+		selected,
+		options,
+		onchange,
+		placeholder = '(none)',
+		wrap = false,
+	}: Props = $props();
 
 	let open = $state(false);
 	let customInput = $state('');
@@ -177,9 +191,15 @@
 </style>
 
 <div
-	class="group flex items-center gap-1 rounded-md border border-input bg-background px-1.5 h-7 overflow-hidden"
+	class="group flex gap-1 rounded-md border border-input bg-background px-1.5 {wrap
+		? 'flex-wrap items-start min-h-7 py-1'
+		: 'items-center h-7 overflow-hidden'}"
 >
-	<div class="chip-scroll flex items-center gap-1 flex-1 min-w-0 overflow-x-auto">
+	<div
+		class="flex items-center gap-1 {wrap
+			? 'flex-wrap'
+			: 'chip-scroll flex-1 min-w-0 overflow-x-auto'}"
+	>
 		{#if selected.length === 0}
 			<span class="text-[10px] text-muted-foreground italic px-1 shrink-0">
 				{placeholder}

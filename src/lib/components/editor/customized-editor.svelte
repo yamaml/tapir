@@ -505,6 +505,7 @@
 								{flavor === 'dctap' ? 'valueDataType' : 'Datatype'}
 							</FieldLabel>
 							<DatatypePicker
+								wrap
 								selected={stmt.datatype ?? []}
 								options={DATATYPE_OPTIONS}
 								onchange={(next) => {
@@ -560,6 +561,7 @@
 							</FieldLabel>
 							{#if getAvailableShapeRefs().length > 0}
 								<ShapeRefPicker
+									wrap
 									selected={stmt.shapeRefs ?? []}
 									options={getAvailableShapeRefs()}
 									onchange={(next) => updateStatement(description.id, stmt.id, { shapeRefs: next })}
@@ -643,6 +645,7 @@
 								</FieldLabel>
 								{#if getAvailableShapeRefs().length > 0}
 									<ShapeRefPicker
+										wrap
 										selected={stmt.shapeRefs ?? []}
 										options={getAvailableShapeRefs()}
 										onchange={(next) => updateStatement(description.id, stmt.id, { shapeRefs: next })}
