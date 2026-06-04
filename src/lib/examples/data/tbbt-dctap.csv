@@ -5,7 +5,7 @@ Character,Character,rdf:type,Class,TRUE,FALSE,IRI,,,foaf:Person,,The class is al
 ,,foaf:firstName,First Name,TRUE,FALSE,literal,xsd:string,,,,First name of the character.
 ,,schema:additionalName,Additional Name,FALSE,FALSE,literal,xsd:string,,,,Additional name of the character.
 ,,schema:jobTitle,Job Title,FALSE,FALSE,literal,xsd:string,,,,Job title of the character.
-,,schema:address,Address,FALSE,FALSE,IRI,,Address,,,Address of the character.
+,,schema:address,Address,FALSE,FALSE,bnode,,Address,,,Address of the character.
 ,,schema:parent,Parents,FALSE,TRUE,IRI,,Character,,,Parents of the character.
 ,,schema:children,Children,FALSE,TRUE,IRI,,Character,,,Children of the character.
 ,,foaf:knows,Knows,FALSE,TRUE,IRI,,Character,,,Other characters this character knows.
