@@ -77,6 +77,7 @@
 	let importErrors = $state<ParseMessage[]>([]);
 	let importing = $state(false);
 	let fileInputEl = $state<HTMLInputElement | null>(null);
+	let selectedExampleId = $state<string | null>(null);
 
 	// ── URL import state ────────────────────────────────────────
 	let activeImportTab = $state<'file' | 'url' | 'example'>('file');
@@ -105,6 +106,12 @@
 		{ prefix: 'org', uri: 'http://www.w3.org/ns/org#', label: 'ORG' },
 		{ prefix: 'rdfs', uri: 'http://www.w3.org/2000/01/rdf-schema#', label: 'RDFS' },
 	];
+
+	// ── Flavor display metadata (example panel) ─────────────────
+	const FLAVOR_META = {
+		simpledsp: { label: 'SimpleDSP', dot: 'bg-blue-500', selected: 'border-blue-500 bg-blue-500/10' },
+		dctap: { label: 'DCTAP', dot: 'bg-green-500', selected: 'border-green-500 bg-green-500/10' },
+	} as const;
 
 	let availableCommon = $derived(COMMON.filter((c) => !(c.prefix in projectNamespaces)));
 	let namespaceCount = $derived(Object.keys(projectNamespaces).length);
@@ -173,6 +180,7 @@
 		newUri = '';
 		clearImport();
 		activeImportTab = 'file';
+		selectedExampleId = null;
 	}
 
 	function clearImport() {
@@ -184,6 +192,7 @@
 		urlInput = '';
 		urlError = null;
 		urlForgeRewriteHint = null;
+		selectedExampleId = null;
 		// Also clear the <input type="file"> so the same filename can be re-picked.
 		if (fileInputEl) fileInputEl.value = '';
 	}
@@ -247,6 +256,7 @@
 		const trimmed = urlInput.trim();
 		if (!trimmed) return;
 
+		selectedExampleId = null;
 		urlLoading = true;
 		urlError = null;
 		urlForgeRewriteHint = null;
@@ -298,6 +308,7 @@
 		const input = e.target as HTMLInputElement;
 		const file = input.files?.[0];
 		if (!file) return;
+		selectedExampleId = null;
 		await processImportedFile(file);
 	}
 
@@ -306,6 +317,7 @@
 	 * raw content through the same import path a picked file uses.
 	 */
 	async function loadExample(ex: ProfileExample): Promise<void> {
+		selectedExampleId = ex.id;
 		await processImportedFile(exampleToFile(ex));
 	}
 
@@ -660,15 +672,15 @@
 							{#if items.length > 0}
 								<div class="grid gap-1.5">
 									<div class="flex items-center gap-2">
-										<div class="h-2.5 w-2.5 rounded-full {flavor === 'simpledsp' ? 'bg-blue-500' : 'bg-green-500'}"></div>
+										<div class="h-2.5 w-2.5 rounded-full {FLAVOR_META[flavor].dot}"></div>
 										<span class="text-xs font-medium text-muted-foreground">
-											{flavor === 'simpledsp' ? 'SimpleDSP' : 'DCTAP'}
+											{FLAVOR_META[flavor].label}
 										</span>
 									</div>
 									{#each items as ex (ex.id)}
 										<button
 											type="button"
-											class="group flex items-center gap-3 rounded-lg border-2 border-border p-3 text-left transition-colors hover:border-muted-foreground/30 {importedFile?.name === ex.fileName ? (flavor === 'simpledsp' ? 'border-blue-500 bg-blue-500/10' : 'border-green-500 bg-green-500/10') : ''}"
+											class="group flex items-center gap-3 rounded-lg border-2 border-border p-3 text-left transition-colors hover:border-muted-foreground/30 {selectedExampleId === ex.id ? FLAVOR_META[flavor].selected : ''}"
 											onclick={() => loadExample(ex)}
 										>
 											<div class="min-w-0 flex-1">
