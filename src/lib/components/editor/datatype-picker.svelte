@@ -224,22 +224,25 @@
 	</div>
 
 	<Popover.Root bind:open>
-		{#if selected.length === 0}
-			<Popover.Trigger
-				class="inline-flex shrink-0 items-center gap-0.5 rounded border border-dashed border-border px-1.5 py-0.5 text-[11px] font-mono text-muted-foreground transition-colors hover:bg-muted hover:text-foreground [&_svg]:pointer-events-none"
-			>
-				<Plus class="h-3 w-3" />
-				Add datatype
-			</Popover.Trigger>
-		{:else}
-			<Popover.Trigger
-				class="inline-flex shrink-0 items-center justify-center rounded h-5 w-5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors [&_svg]:pointer-events-none"
-				title="Add another datatype"
-				aria-label="Add another datatype"
-			>
-				<Plus class="h-3.5 w-3.5" />
-			</Popover.Trigger>
-		{/if}
+		<!--
+			Single stable Popover.Trigger across both states. Swapping the
+			trigger with an {#if} would destroy its effect subtree while the
+			popover is still open (on the 0 → 1 transition), and the dying
+			trigger's internal derived gets read mid-flush → Svelte's
+			derived_inert warning. Keeping one element and switching only its
+			class/labels/icon-size avoids that teardown. The trailing text is
+			a text-only {#if}, which owns no deriveds and is safe.
+		-->
+		<Popover.Trigger
+			class={selected.length === 0
+				? 'inline-flex shrink-0 items-center gap-0.5 rounded border border-dashed border-border px-1.5 py-0.5 text-[11px] font-mono text-muted-foreground transition-colors hover:bg-muted hover:text-foreground [&_svg]:pointer-events-none'
+				: 'inline-flex shrink-0 items-center justify-center rounded h-5 w-5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors [&_svg]:pointer-events-none'}
+			title={selected.length === 0 ? undefined : 'Add another datatype'}
+			aria-label={selected.length === 0 ? 'Add datatype' : 'Add another datatype'}
+		>
+			<Plus class={selected.length === 0 ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
+			{#if selected.length === 0}Add datatype{/if}
+		</Popover.Trigger>
 		<Popover.Content side="bottom" align="start" class="w-64 p-1">
 			<div class="flex flex-col">
 				{#each available as opt}

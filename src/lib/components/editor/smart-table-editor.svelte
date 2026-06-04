@@ -80,6 +80,12 @@
 	// Track which cell is being edited: `row-col` key
 	let editingCell = $state<string | null>(null);
 	let editValue = $state('');
+	// True while we programmatically move the edit to another cell (Tab/Enter
+	// navigation). Tearing down the old input fires a trailing `onblur`; without
+	// this flag that blur re-runs commitEdit() against the shared editValue that
+	// startEdit() has already overwritten with the NEXT cell's value, corrupting
+	// the cell we just left. Set during Tab navigation, cleared on a macrotask.
+	let suppressBlurCommit = $state(false);
 
 	// Track which row has the constraint popover open
 	let constraintPopoverRow = $state<string | null>(null);
@@ -318,8 +324,12 @@
 			editingCell = null;
 			e.preventDefault();
 		} else if (e.key === 'Tab') {
-			commitEdit(stmt, col);
 			e.preventDefault();
+			// Suppress the trailing blur fired when startEdit() below reassigns
+			// editingCell and tears down this input — otherwise that blur
+			// re-commits the now-overwritten editValue into this cell.
+			suppressBlurCommit = true;
+			commitEdit(stmt, col);
 			// Move to next editable cell
 			let nextCol = colIndex + (e.shiftKey ? -1 : 1);
 			let nextRow = rowIndex;
@@ -337,6 +347,8 @@
 					startEdit(nextRow, nextCol, nextStmt, nc);
 				}
 			}
+			// Re-enable blur-commit after the focus move + DOM teardown settle.
+			setTimeout(() => { suppressBlurCommit = false; }, 0);
 		}
 	}
 
@@ -512,7 +524,7 @@
 												editValue = (e.target as HTMLSelectElement).value;
 												commitEdit(stmt, col);
 											}}
-											onblur={() => commitEdit(stmt, col)}
+											onblur={() => { if (!suppressBlurCommit) commitEdit(stmt, col); }}
 											autofocus
 										>
 											{#if flavor === 'dctap'}
@@ -536,7 +548,7 @@
 												editValue = (e.target as HTMLSelectElement).value;
 												commitEdit(stmt, col);
 											}}
-											onblur={() => commitEdit(stmt, col)}
+											onblur={() => { if (!suppressBlurCommit) commitEdit(stmt, col); }}
 											autofocus
 										>
 											<option value="">(empty)</option>
@@ -552,7 +564,7 @@
 												editValue = (e.target as HTMLSelectElement).value;
 												commitEdit(stmt, col);
 											}}
-											onblur={() => commitEdit(stmt, col)}
+											onblur={() => { if (!suppressBlurCommit) commitEdit(stmt, col); }}
 											autofocus
 										>
 											<option value="">(empty)</option>
@@ -568,7 +580,7 @@
 												editValue = (e.target as HTMLSelectElement).value;
 												commitEdit(stmt, col);
 											}}
-											onblur={() => commitEdit(stmt, col)}
+											onblur={() => { if (!suppressBlurCommit) commitEdit(stmt, col); }}
 											autofocus
 										>
 											<option value="">(none)</option>
@@ -586,7 +598,7 @@
 										<input
 											type="text"
 											bind:value={editValue}
-											onblur={() => commitEdit(stmt, col)}
+											onblur={() => { if (!suppressBlurCommit) commitEdit(stmt, col); }}
 											onkeydown={(e: KeyboardEvent) => handleKeydown(e, stmt, col, rowIndex, colIndex)}
 											class="w-full h-7 px-1.5 text-xs bg-background border border-ring rounded focus:outline-none focus:ring-1 focus:ring-ring {col.mono ? 'font-mono' : ''}"
 											autofocus

@@ -132,22 +132,22 @@
 				stays visible (no hover-to-reveal) so keyboard users can
 				tab to it.
 			-->
-			{#if selected.length === 0}
-				<Popover.Trigger
-					class="inline-flex shrink-0 items-center gap-0.5 rounded border border-dashed border-border px-1.5 py-0.5 text-[11px] font-mono text-muted-foreground transition-colors hover:bg-muted hover:text-foreground [&_svg]:pointer-events-none"
-				>
-					<Plus class="h-3 w-3" />
-					Add shape
-				</Popover.Trigger>
-			{:else}
-				<Popover.Trigger
-					class="inline-flex shrink-0 items-center justify-center rounded h-5 w-5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors [&_svg]:pointer-events-none"
-					title="Add another shape"
-					aria-label="Add another shape"
-				>
-					<Plus class="h-3.5 w-3.5" />
-				</Popover.Trigger>
-			{/if}
+			<!--
+				Single stable Popover.Trigger across both states — see the
+				note in datatype-picker.svelte. Swapping the trigger on the
+				0 → 1 transition while the popover is open tears down its
+				effect and trips Svelte's derived_inert warning.
+			-->
+			<Popover.Trigger
+				class={selected.length === 0
+					? 'inline-flex shrink-0 items-center gap-0.5 rounded border border-dashed border-border px-1.5 py-0.5 text-[11px] font-mono text-muted-foreground transition-colors hover:bg-muted hover:text-foreground [&_svg]:pointer-events-none'
+					: 'inline-flex shrink-0 items-center justify-center rounded h-5 w-5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors [&_svg]:pointer-events-none'}
+				title={selected.length === 0 ? undefined : 'Add another shape'}
+				aria-label={selected.length === 0 ? 'Add shape' : 'Add another shape'}
+			>
+				<Plus class={selected.length === 0 ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
+				{#if selected.length === 0}Add shape{/if}
+			</Popover.Trigger>
 			<Popover.Content side="bottom" align="start" class="w-56 p-1">
 				<div class="flex flex-col">
 					{#each available as opt}
