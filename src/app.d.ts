@@ -12,3 +12,11 @@ declare global {
 }
 
 export {};
+
+// ── Vite ?raw imports ───────────────────────────────────────────
+// Importing a file with the `?raw` suffix yields its text content as
+// a string, resolved at build time. Used for bundled example profiles.
+declare module '*?raw' {
+	const content: string;
+	export default content;
+}
