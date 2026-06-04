@@ -19,4 +19,33 @@ errors/issues recorded here, then fixed.
 
 ## Test coverage log
 
-(area-by-area notes)
+All areas exercised as a human tester via Playwright MCP, with console
+monitored throughout. Result: **0 console errors** across the whole
+session; 3 real bugs found and fixed (I1–I3); all verified live.
+
+- **Dashboard / lifecycle** — empty state, blank create (both flavors),
+  example create (all 4), project cards, persistence across reload. ✓
+- **Customized editor** — add/edit statement & description, all fields,
+  ValueType dropdown, datatype picker, constraint editor, required-field
+  validation, undeclared-prefix banner + one-click declare, JP/EN
+  nomenclature toggle (no English/Japanese mixing). ✓
+- **Smart Table / Raw Table** — mode switching lossless, color-coded value
+  types, inline cell edit (found & fixed I2 Tab data-loss), assistance
+  header. ✓
+- **Import** — example load, URL import error (invalid URL → graceful
+  message), malformed file (→ "no content, blank project" advisory, no
+  crash). ✓
+- **Export** — all generators valid on all 4 examples (36-check regression
+  test added: SimpleDSP/DCTAP/SHACL/ShEx/OWL-DSP/JSON/Frictionless/diagram/
+  HTML); UI download path for .tsv/.shacl.ttl/.zip; ZIP holds 13 artifacts. ✓
+- **Validation panel** — "No issues" for a valid profile; undeclared-prefix
+  detection via banner. ✓
+- **Diagram / History / autosave** — diagram renders connected graph;
+  labeled snapshots save + persist across reload; restore-confirm flow
+  (found & fixed I3 derived_inert). ✓
+- **Cross-cutting** — theme toggle (dark↔light), version in header/footer,
+  derived_inert swept from chip pickers + Tip across all overlays (I1, I3).
+  Console clean. ✓
+
+Final state: type-check 0 errors, 582 tests pass, production build OK,
+version 0.1.7-beta.100.
