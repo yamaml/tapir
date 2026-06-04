@@ -17,6 +17,7 @@
 	} from '$lib/components/ui/dialog';
 	import { duplicateProject, deleteProject } from '$lib/db';
 	import Plus from 'lucide-svelte/icons/plus';
+	import Sparkles from 'lucide-svelte/icons/sparkles';
 	import FileText from 'lucide-svelte/icons/file-text';
 	import ChevronRight from 'lucide-svelte/icons/chevron-right';
 	import Copy from 'lucide-svelte/icons/copy';
@@ -25,6 +26,13 @@
 	import NewProjectDialog from '$lib/components/dashboard/new-project-dialog.svelte';
 
 	let showNewProject = $state(false);
+	let pendingExampleId = $state<string | undefined>(undefined);
+
+	// Clear the preselected example once the dialog has closed so the
+	// next plain "New Project" open starts blank.
+	$effect(() => {
+		if (!showNewProject) pendingExampleId = undefined;
+	});
 
 	// Delete confirmation state. When `deleteTarget` is non-null, the
 	// confirm dialog opens. We keep the name around for display after
@@ -40,6 +48,12 @@
 		e.stopPropagation();
 		await duplicateProject(projectId);
 		await refreshProjectsList();
+	}
+
+	/** Preselects an example, then opens the New Project dialog on its Example tab. */
+	function openWithExample(id: string) {
+		pendingExampleId = id;
+		showNewProject = true;
 	}
 
 	function handleDeleteClick(e: MouseEvent, projectId: string, projectName: string) {
@@ -97,6 +111,19 @@
 					<Plus class="mr-2 h-5 w-5" />
 					New Project
 				</Button>
+			</div>
+			<div class="mt-6">
+				<p class="text-xs text-muted-foreground">Or start from an example:</p>
+				<div class="mt-2 flex flex-wrap items-center justify-center gap-2">
+					<Button variant="outline" size="sm" onclick={() => openWithExample('tbbt')}>
+						<Sparkles class="mr-1.5 h-4 w-4" />
+						Big Bang Theory
+					</Button>
+					<Button variant="outline" size="sm" onclick={() => openWithExample('srap-april')}>
+						<Sparkles class="mr-1.5 h-4 w-4" />
+						SRAP profile
+					</Button>
+				</div>
 			</div>
 		</div>
 	{:else}
@@ -177,7 +204,7 @@
 	{/if}
 </div>
 
-<NewProjectDialog bind:open={showNewProject} />
+<NewProjectDialog bind:open={showNewProject} initialExampleId={pendingExampleId} />
 
 <Dialog
 	open={deleteTarget !== null}
