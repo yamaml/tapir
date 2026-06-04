@@ -9,6 +9,7 @@
 	import { STANDARD_PREFIXES } from '$lib/converters/simpledsp-generator';
 	import zazukoPrefixes from '@zazuko/prefixes';
 	import { importFile } from '$lib/components/editor/import-handler';
+	import { EXAMPLES, exampleToFile, type ProfileExample } from '$lib/examples';
 	import {
 		loadProfileFromUrl,
 		rewriteForgeBlobUrl,
@@ -36,13 +37,19 @@
 	import Link from 'lucide-svelte/icons/link';
 	import Loader from 'lucide-svelte/icons/loader-circle';
 	import AlertTriangle from 'lucide-svelte/icons/triangle-alert';
+	import Sparkles from 'lucide-svelte/icons/sparkles';
 	import Tip from '$lib/components/ui/tip.svelte';
 
 	interface Props {
 		open: boolean;
+		/**
+		 * If set when the dialog opens, switch to the Example tab and
+		 * load this example into the preview automatically.
+		 */
+		initialExampleId?: string;
 	}
 
-	let { open = $bindable() }: Props = $props();
+	let { open = $bindable(), initialExampleId }: Props = $props();
 
 	let projectName = $state('');
 	let selectedFlavor = $state<Flavor>('simpledsp');
@@ -72,7 +79,7 @@
 	let fileInputEl = $state<HTMLInputElement | null>(null);
 
 	// ── URL import state ────────────────────────────────────────
-	let activeImportTab = $state<'file' | 'url'>('file');
+	let activeImportTab = $state<'file' | 'url' | 'example'>('file');
 	let urlInput = $state('');
 	let urlLoading = $state(false);
 	let urlError = $state<string | null>(null);
@@ -165,6 +172,7 @@
 		newPrefix = '';
 		newUri = '';
 		clearImport();
+		activeImportTab = 'file';
 	}
 
 	function clearImport() {
@@ -292,6 +300,31 @@
 		if (!file) return;
 		await processImportedFile(file);
 	}
+
+	/**
+	 * Loads a bundled example into the dialog preview by routing its
+	 * raw content through the same import path a picked file uses.
+	 */
+	async function loadExample(ex: ProfileExample): Promise<void> {
+		await processImportedFile(exampleToFile(ex));
+	}
+
+	// When opened with a preselected example (from the dashboard quick
+	// buttons), jump to the Example tab and load it once per open.
+	let loadedExampleForOpen = $state(false);
+	$effect(() => {
+		if (open && initialExampleId && !loadedExampleForOpen) {
+			const ex = EXAMPLES.find((e) => e.id === initialExampleId);
+			if (ex) {
+				activeImportTab = 'example';
+				loadExample(ex);
+			}
+			loadedExampleForOpen = true;
+		}
+		if (!open) {
+			loadedExampleForOpen = false;
+		}
+	});
 
 	function handleQuickAdd(prefix: string, uri: string) {
 		projectNamespaces = { ...projectNamespaces, [prefix]: uri };
@@ -490,6 +523,15 @@
 					>
 						URL
 					</button>
+					<button
+						type="button"
+						role="tab"
+						aria-selected={activeImportTab === 'example'}
+						class="px-3 h-7 text-xs rounded-sm transition-colors {activeImportTab === 'example' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'}"
+						onclick={() => (activeImportTab = 'example')}
+					>
+						Example
+					</button>
 				</div>
 
 				{#if activeImportTab === 'file'}
@@ -544,7 +586,7 @@
 						accept=".yaml,.yml,.csv,.tsv,.xlsx"
 						onchange={handleFileSelect}
 					/>
-				{:else}
+				{:else if activeImportTab === 'url'}
 					<!-- URL tab -->
 					<div class="flex gap-2">
 						<div class="relative flex-1">
@@ -611,6 +653,35 @@
 							</Tip>
 						</div>
 					{/if}
+				{:else if activeImportTab === 'example'}
+					<div class="grid gap-3">
+						{#each ['simpledsp', 'dctap'] as const as flavor}
+							{@const items = EXAMPLES.filter((e) => e.flavor === flavor)}
+							{#if items.length > 0}
+								<div class="grid gap-1.5">
+									<div class="flex items-center gap-2">
+										<div class="h-2.5 w-2.5 rounded-full {flavor === 'simpledsp' ? 'bg-blue-500' : 'bg-green-500'}"></div>
+										<span class="text-xs font-medium text-muted-foreground">
+											{flavor === 'simpledsp' ? 'SimpleDSP' : 'DCTAP'}
+										</span>
+									</div>
+									{#each items as ex (ex.id)}
+										<button
+											type="button"
+											class="group flex items-center gap-3 rounded-lg border-2 border-border p-3 text-left transition-colors hover:border-muted-foreground/30 {importedFile?.name === ex.fileName ? (flavor === 'simpledsp' ? 'border-blue-500 bg-blue-500/10' : 'border-green-500 bg-green-500/10') : ''}"
+											onclick={() => loadExample(ex)}
+										>
+											<div class="min-w-0 flex-1">
+												<div class="text-sm font-medium text-foreground">{ex.title}</div>
+												<p class="mt-0.5 text-xs text-muted-foreground leading-snug">{ex.description}</p>
+											</div>
+											<Sparkles class="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+										</button>
+									{/each}
+								</div>
+							{/if}
+						{/each}
+					</div>
 				{/if}
 
 				<!-- Shared advisory blocks (warnings / errors / empty parse). -->
