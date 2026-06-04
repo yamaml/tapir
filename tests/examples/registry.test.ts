@@ -13,12 +13,21 @@ describe('EXAMPLES registry', () => {
 		expect(EXAMPLES.some((e) => e.flavor === 'dctap')).toBe(true);
 	});
 
-	it('every example has a unique id and non-empty raw content', () => {
+	it('offers both Big Bang Theory and SRAP for both flavors', () => {
+		for (const flavor of ['simpledsp', 'dctap'] as const) {
+			const titles = EXAMPLES.filter((e) => e.flavor === flavor).map((e) => e.title);
+			expect(titles).toContain('Big Bang Theory characters');
+			expect(titles).toContain('SRAP — Scholarly Resource AP');
+		}
+	});
+
+	it('every example has a unique id and non-empty text fields', () => {
 		const ids = EXAMPLES.map((e) => e.id);
 		expect(new Set(ids).size).toBe(ids.length);
 		for (const e of EXAMPLES) {
 			expect(e.raw.trim().length).toBeGreaterThan(0);
 			expect(e.title.length).toBeGreaterThan(0);
+			expect(e.shortLabel.length).toBeGreaterThan(0);
 			expect(e.description.length).toBeGreaterThan(0);
 		}
 	});
@@ -35,7 +44,9 @@ describe('EXAMPLES registry', () => {
 
 describe('getExample', () => {
 	it('returns the matching example by id', () => {
-		expect(getExample('tbbt')).toBe(EXAMPLES.find((e) => e.id === 'tbbt'));
+		expect(getExample('tbbt-simpledsp')).toBe(
+			EXAMPLES.find((e) => e.id === 'tbbt-simpledsp')
+		);
 	});
 
 	it('returns undefined for an unknown id', () => {
@@ -55,72 +66,55 @@ describe('exampleToFile', () => {
 	});
 });
 
+// ── Parse any example into a project ────────────────────────────
+// Routes an example through the same converter its flavor uses, so the
+// relationship/parse checks below cover every registry entry uniformly.
+
+function parseExample(ex: (typeof EXAMPLES)[number]) {
+	if (ex.flavor === 'simpledsp') {
+		return parseSimpleDsp(ex.raw, ex.title);
+	}
+	const rows = parseCsvRows(ex.raw, ',');
+	const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+	expect(isDctapFormat(headers)).toBe(true);
+	return dctapRowsToTapir(rows as DctapRow[], ex.title);
+}
+
 // ── Each example parses through its converter ───────────────────
 
 describe('example content is parseable', () => {
-	it('the SimpleDSP example parses without errors', () => {
-		const ex = EXAMPLES.find((e) => e.flavor === 'simpledsp');
-		expect(ex).toBeDefined();
-		if (!ex) return;
-		const { data, errors } = parseSimpleDsp(ex.raw, ex.title);
-		expect(errors).toHaveLength(0);
-		expect(data.descriptions.length).toBeGreaterThan(0);
-	});
-
-	it('the DCTAP example parses without errors', () => {
-		const ex = EXAMPLES.find((e) => e.flavor === 'dctap');
-		expect(ex).toBeDefined();
-		if (!ex) return;
-		const rows = parseCsvRows(ex.raw, ',');
-		const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
-		expect(isDctapFormat(headers)).toBe(true);
-		const { data, errors } = dctapRowsToTapir(rows as DctapRow[], ex.title);
-		expect(errors).toHaveLength(0);
-		expect(data.descriptions.length).toBeGreaterThan(0);
-	});
+	for (const ex of EXAMPLES) {
+		it(`${ex.id} parses without errors`, () => {
+			const { data, errors } = parseExample(ex);
+			expect(errors).toHaveLength(0);
+			expect(data.descriptions.length).toBeGreaterThan(0);
+		});
+	}
 });
 
 // ── Examples demonstrate inter-shape relationships ──────────────
-// An example with no edges is a poor showcase. Both examples must
+// An example with no edges is a poor showcase. Every example must
 // encode at least one shape-to-shape reference (SimpleDSP via
 // `structured` + `#block` → shapeRefs; DCTAP via the valueShape
-// column → shapeRefs) and render at least one diagram edge.
+// column → shapeRefs), resolve all refs to real blocks, and render at
+// least one diagram edge.
 
-describe('examples have relationships that draw diagram edges', () => {
-	it('the SimpleDSP example encodes shape references and renders edges', () => {
-		const ex = EXAMPLES.find((e) => e.flavor === 'simpledsp');
-		expect(ex).toBeDefined();
-		if (!ex) return;
-		const { data } = parseSimpleDsp(ex.raw, ex.title);
+describe('every example encodes relationships that draw diagram edges', () => {
+	for (const ex of EXAMPLES) {
+		it(`${ex.id} has resolved shape references and renders edges`, () => {
+			const { data } = parseExample(ex);
 
-		// Some statement somewhere must reference another (or its own) block.
-		const allRefs = data.descriptions.flatMap((d) =>
-			d.statements.flatMap((s) => s.shapeRefs ?? [])
-		);
-		expect(allRefs.length).toBeGreaterThan(0);
+			const allRefs = data.descriptions.flatMap((d) =>
+				d.statements.flatMap((s) => s.shapeRefs ?? [])
+			);
+			expect(allRefs.length).toBeGreaterThan(0);
 
-		// Every ref must resolve to a real description name (no dangling targets).
-		const names = new Set(data.descriptions.map((d) => d.name));
-		for (const ref of allRefs) expect(names.has(ref)).toBe(true);
+			// No dangling targets — every ref names a real block.
+			const names = new Set(data.descriptions.map((d) => d.name));
+			for (const ref of allRefs) expect(names.has(ref)).toBe(true);
 
-		// The diagram must actually draw edges (DOT uses `->` for edges).
-		const dot = buildDiagram(data);
-		expect(dot).toContain('->');
-	});
-
-	it('the DCTAP example encodes shape references and renders edges', () => {
-		const ex = EXAMPLES.find((e) => e.flavor === 'dctap');
-		expect(ex).toBeDefined();
-		if (!ex) return;
-		const rows = parseCsvRows(ex.raw, ',');
-		const { data } = dctapRowsToTapir(rows as DctapRow[], ex.title);
-
-		const allRefs = data.descriptions.flatMap((d) =>
-			d.statements.flatMap((s) => s.shapeRefs ?? [])
-		);
-		expect(allRefs.length).toBeGreaterThan(0);
-
-		const dot = buildDiagram(data);
-		expect(dot).toContain('->');
-	});
+			// The diagram must actually draw edges (DOT uses `->`).
+			expect(buildDiagram(data)).toContain('->');
+		});
+	}
 });

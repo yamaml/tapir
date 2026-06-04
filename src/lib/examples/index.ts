@@ -10,12 +10,14 @@
  */
 import type { Flavor } from '$lib/types';
 import tbbtSimpledsp from './data/tbbt-simpledsp.tsv?raw';
+import tbbtDctap from './data/tbbt-dctap.csv?raw';
+import srapSimpledsp from './data/srap-simpledsp.tsv?raw';
 import srapAprilModel from './data/srap-april-model.csv?raw';
 
 // ── Types ───────────────────────────────────────────────────────
 
 /** Identifiers of the bundled examples. */
-export type ExampleId = 'tbbt' | 'srap-april';
+export type ExampleId = 'tbbt-simpledsp' | 'tbbt-dctap' | 'srap-simpledsp' | 'srap-dctap';
 
 /** A bundled example application profile. */
 export interface ProfileExample {
@@ -28,6 +30,8 @@ export interface ProfileExample {
 	 * derived from `fileName` (matching normal file import), not this.
 	 */
 	title: string;
+	/** Compact label for the dashboard quick buttons. */
+	shortLabel: string;
 	/** One-line description shown on the example card. */
 	description: string;
 	/**
@@ -43,23 +47,46 @@ export interface ProfileExample {
 // ── Registry ────────────────────────────────────────────────────
 
 /**
- * The example profiles offered in the UI. Add an entry (plus its
- * `?raw` import above) to ship another example — no UI changes needed.
+ * The example profiles offered in the UI. Every flavor has both the
+ * Big Bang Theory (approachable) and SRAP (realistic) profiles. Add an
+ * entry (plus its `?raw` import above) to ship another example — the
+ * dialog cards and dashboard quick buttons are generated from this list,
+ * so no UI changes are needed.
  */
 export const EXAMPLES: ProfileExample[] = [
 	{
-		id: 'tbbt',
+		id: 'tbbt-simpledsp',
 		flavor: 'simpledsp',
 		title: 'Big Bang Theory characters',
+		shortLabel: 'Big Bang Theory',
 		description: 'Character profile with cross-references between people.',
 		fileName: 'tbbt-simpledsp.tsv',
 		raw: tbbtSimpledsp,
 	},
 	{
-		id: 'srap-april',
+		id: 'srap-simpledsp',
+		flavor: 'simpledsp',
+		title: 'SRAP — Scholarly Resource AP',
+		shortLabel: 'SRAP profile',
+		description: 'Seven blocks, COAR vocabularies, multi-block references.',
+		fileName: 'srap-simpledsp.tsv',
+		raw: srapSimpledsp,
+	},
+	{
+		id: 'tbbt-dctap',
+		flavor: 'dctap',
+		title: 'Big Bang Theory characters',
+		shortLabel: 'Big Bang Theory',
+		description: 'Character shapes with cross-references between people.',
+		fileName: 'tbbt-dctap.csv',
+		raw: tbbtDctap,
+	},
+	{
+		id: 'srap-dctap',
 		flavor: 'dctap',
 		title: 'SRAP — Scholarly Resource AP',
-		description: 'Eight shapes, COAR vocabularies, multi-shape references.',
+		shortLabel: 'SRAP profile',
+		description: 'Seven shapes, COAR vocabularies, multi-shape references.',
 		fileName: 'srap-april-model.csv',
 		raw: srapAprilModel,
 	},
@@ -70,11 +97,11 @@ export const EXAMPLES: ProfileExample[] = [
 /**
  * Looks up an example by id.
  *
- * @param id - The example id (e.g. `'tbbt'`).
+ * @param id - The example id (e.g. `'tbbt-simpledsp'`).
  * @returns The matching example, or `undefined` if none.
  *
  * @example
- * const ex = getExample('srap-april');
+ * const ex = getExample('srap-dctap');
  */
 export function getExample(id: ExampleId): ProfileExample | undefined {
 	return EXAMPLES.find((e) => e.id === id);
@@ -88,7 +115,7 @@ export function getExample(id: ExampleId): ProfileExample | undefined {
  * @returns A `File` carrying the example's raw text and file name.
  *
  * @example
- * const ex = getExample('tbbt');
+ * const ex = getExample('tbbt-simpledsp');
  * if (ex) await processImportedFile(exampleToFile(ex));
  */
 export function exampleToFile(ex: ProfileExample): File {
