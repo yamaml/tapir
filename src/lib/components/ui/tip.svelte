@@ -49,34 +49,37 @@
 	}: Props = $props();
 </script>
 
-{#if disabled || !text}
-	{@render children()}
-{:else}
-	<TooltipPrimitive.Provider delayDuration={delayMs} disableHoverableContent>
-		<TooltipPrimitive.Root>
-			<TooltipPrimitive.Trigger>
-				{@render children()}
-			</TooltipPrimitive.Trigger>
-			<TooltipPrimitive.Portal>
-				<TooltipPrimitive.Content
-					{side}
-					{align}
-					sideOffset={6}
-					class={cn(
-						'z-50 flex items-center gap-2 rounded-md border border-border bg-popover px-2.5 py-1 text-xs text-popover-foreground shadow-md',
-						'animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95'
-					)}
-				>
-					<span>{text}</span>
-					{#if shortcut}
-						<kbd
-							class="inline-flex h-4 select-none items-center rounded border border-border bg-muted px-1 font-mono text-[10px] text-muted-foreground"
-						>
-							{shortcut}
-						</kbd>
-					{/if}
-				</TooltipPrimitive.Content>
-			</TooltipPrimitive.Portal>
-		</TooltipPrimitive.Root>
-	</TooltipPrimitive.Provider>
-{/if}
+<!--
+	The tooltip tree is ALWAYS rendered; an empty/disabled tip is expressed
+	by passing `disabled` to the primitive rather than swapping between bare
+	children and the full tree with an {#if}. Swapping would destroy the
+	Tooltip.Root/Trigger effects (which own internal $deriveds) whenever
+	`text`/`disabled` flips, tripping Svelte's `derived_inert` warning.
+-->
+<TooltipPrimitive.Provider delayDuration={delayMs} disableHoverableContent>
+	<TooltipPrimitive.Root disabled={disabled || !text}>
+		<TooltipPrimitive.Trigger>
+			{@render children()}
+		</TooltipPrimitive.Trigger>
+		<TooltipPrimitive.Portal>
+			<TooltipPrimitive.Content
+				{side}
+				{align}
+				sideOffset={6}
+				class={cn(
+					'z-50 flex items-center gap-2 rounded-md border border-border bg-popover px-2.5 py-1 text-xs text-popover-foreground shadow-md',
+					'animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95'
+				)}
+			>
+				<span>{text}</span>
+				{#if shortcut}
+					<kbd
+						class="inline-flex h-4 select-none items-center rounded border border-border bg-muted px-1 font-mono text-[10px] text-muted-foreground"
+					>
+						{shortcut}
+					</kbd>
+				{/if}
+			</TooltipPrimitive.Content>
+		</TooltipPrimitive.Portal>
+	</TooltipPrimitive.Root>
+</TooltipPrimitive.Provider>

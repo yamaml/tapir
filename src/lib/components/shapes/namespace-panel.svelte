@@ -314,6 +314,14 @@
 	-->
 	{#if $currentProject?.flavor !== 'dctap'}
 		<div class="mb-1.5">
+			<!--
+				Edit UI is a sibling {#if}, not a branch swap, so the base
+				<Tip> below is never destroyed mid reactive-flush when
+				`editingBase` flips on the click of its own trigger (which
+				would fire Svelte's derived_inert warning via the Tooltip
+				trigger's internal $derived). The Tip stays mounted and is
+				hidden with a class while editing.
+			-->
 			{#if editingBase}
 				<div class="flex gap-1">
 					<input
@@ -331,21 +339,20 @@
 						<X class="h-3 w-3" />
 					</button>
 				</div>
-			{:else}
-				<Tip text="Base IRI used to expand unprefixed terms (e.g. record IDs). Optional — record URIs stay as blank nodes if no base is set.">
-					<button
-						type="button"
-						class="text-[10px] text-muted-foreground hover:text-foreground transition-colors w-full text-left"
-						onclick={startEditBase}
-					>
-						{#if $currentProject?.base}
-							<span class="font-mono">@base: {truncateUri($currentProject.base)}</span>
-						{:else}
-							<span class="italic">+ Set base IRI</span>
-						{/if}
-					</button>
-				</Tip>
 			{/if}
+			<Tip text="Base IRI used to expand unprefixed terms (e.g. record IDs). Optional — record URIs stay as blank nodes if no base is set.">
+				<button
+					type="button"
+					class="text-[10px] text-muted-foreground hover:text-foreground transition-colors w-full text-left {editingBase ? 'hidden' : ''}"
+					onclick={startEditBase}
+				>
+					{#if $currentProject?.base}
+						<span class="font-mono">@base: {truncateUri($currentProject.base)}</span>
+					{:else}
+						<span class="italic">+ Set base IRI</span>
+					{/if}
+				</button>
+			</Tip>
 		</div>
 	{/if}
 
@@ -355,6 +362,15 @@
 	{:else}
 		<div class="space-y-0.5 max-h-[160px] overflow-y-auto">
 			{#each entries as [prefix, uri]}
+				<!--
+					Edit form is a sibling {#if}, not a branch swap, so the
+					Edit/Remove <Tip> buttons below are never destroyed mid
+					reactive-flush when `editingPrefix` flips on the click of
+					the Edit trigger (which would fire Svelte's derived_inert
+					warning via the Tooltip trigger's internal $derived). The
+					Tips stay mounted and are hidden with a class while this
+					entry is being edited.
+				-->
 				{#if editingPrefix === prefix}
 					<!--
 						Vertical layout: each field on its own labelled row so
@@ -414,32 +430,31 @@
 							</button>
 						</div>
 					</div>
-				{:else}
-					<div class="group flex items-baseline gap-1.5 text-[11px]">
-						<span class="font-mono font-medium text-foreground shrink-0">{prefix}:</span>
-						<span class="text-muted-foreground font-mono truncate flex-1" title={uri}>{truncateUri(uri)}</span>
-						<Tip text="Edit namespace">
-							<button
-								type="button"
-								class="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity shrink-0 [&_svg]:pointer-events-none"
-								onclick={() => startEditNamespace(prefix, uri)}
-								aria-label="Edit namespace"
-							>
-								<Pencil class="h-2.5 w-2.5" />
-							</button>
-						</Tip>
-						<Tip text="Remove namespace">
-							<button
-								type="button"
-								class="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity shrink-0 [&_svg]:pointer-events-none"
-								onclick={() => handleRemoveNamespace(prefix)}
-								aria-label="Remove namespace"
-							>
-								<Trash2 class="h-2.5 w-2.5" />
-							</button>
-						</Tip>
-					</div>
 				{/if}
+				<div class="group flex items-baseline gap-1.5 text-[11px] {editingPrefix === prefix ? 'hidden' : ''}">
+					<span class="font-mono font-medium text-foreground shrink-0">{prefix}:</span>
+					<span class="text-muted-foreground font-mono truncate flex-1" title={uri}>{truncateUri(uri)}</span>
+					<Tip text="Edit namespace">
+						<button
+							type="button"
+							class="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity shrink-0 [&_svg]:pointer-events-none"
+							onclick={() => startEditNamespace(prefix, uri)}
+							aria-label="Edit namespace"
+						>
+							<Pencil class="h-2.5 w-2.5" />
+						</button>
+					</Tip>
+					<Tip text="Remove namespace">
+						<button
+							type="button"
+							class="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity shrink-0 [&_svg]:pointer-events-none"
+							onclick={() => handleRemoveNamespace(prefix)}
+							aria-label="Remove namespace"
+						>
+							<Trash2 class="h-2.5 w-2.5" />
+						</button>
+					</Tip>
+				</div>
 			{/each}
 		</div>
 	{/if}

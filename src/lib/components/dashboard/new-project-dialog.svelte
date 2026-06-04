@@ -629,16 +629,23 @@
 									</div>
 								{/if}
 							</div>
-							<Tip text="Remove file">
-								<button
-									type="button"
-									class="text-muted-foreground hover:text-destructive transition-colors [&_svg]:pointer-events-none"
-									onclick={clearImport}
-									aria-label="Remove file"
-								>
-									<X class="h-4 w-4" />
-								</button>
-							</Tip>
+							<!--
+								Plain title= instead of a <Tip> wrapper here:
+								clearImport sets importedFile=null, which flips
+								this {#if importedFile} branch and would destroy
+								the Tooltip overlay (its trigger owns an internal
+								$derived) mid reactive-flush, firing Svelte's
+								derived_inert warning. A native tooltip avoids it.
+							-->
+							<button
+								type="button"
+								class="text-muted-foreground hover:text-destructive transition-colors [&_svg]:pointer-events-none"
+								onclick={clearImport}
+								aria-label="Remove file"
+								title="Remove file"
+							>
+								<X class="h-4 w-4" />
+							</button>
 						</div>
 					{:else}
 						<label
@@ -714,16 +721,24 @@
 									</div>
 								{/if}
 							</div>
-							<Tip text="Remove import">
-								<button
-									type="button"
-									class="text-muted-foreground hover:text-destructive transition-colors [&_svg]:pointer-events-none"
-									onclick={clearImport}
-									aria-label="Remove import"
-								>
-									<X class="h-4 w-4" />
-								</button>
-							</Tip>
+							<!--
+								Plain title= instead of a <Tip> wrapper here:
+								clearImport sets importedFile=null, which flips
+								this {#if importedFile && !urlError} branch and
+								would destroy the Tooltip overlay (its trigger
+								owns an internal $derived) mid reactive-flush,
+								firing Svelte's derived_inert warning. A native
+								tooltip avoids it.
+							-->
+							<button
+								type="button"
+								class="text-muted-foreground hover:text-destructive transition-colors [&_svg]:pointer-events-none"
+								onclick={clearImport}
+								aria-label="Remove import"
+								title="Remove import"
+							>
+								<X class="h-4 w-4" />
+							</button>
 						</div>
 					{/if}
 				{:else if activeImportTab === 'example'}

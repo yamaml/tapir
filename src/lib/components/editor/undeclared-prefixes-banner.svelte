@@ -165,6 +165,12 @@
 						</button>
 					</Tip>
 				{/if}
+				<!--
+					The inline declare-editor and the prefix chip are toggled with
+					`hidden` rather than an {#if}/{:else} swap: swapping would destroy
+					the Tip-wrapped chip (whose tooltip was just hovered before the
+					click) mid-flush and trip Svelte's derived_inert warning.
+				-->
 				{#each undeclaredPrefixes as prefix}
 					{#if editingPrefix === prefix}
 						<div class="inline-flex items-center gap-1 rounded border border-amber-500/40 bg-card px-1.5 py-1">
@@ -195,22 +201,21 @@
 								<X class="h-3 w-3" />
 							</button>
 						</div>
-					{:else}
-						<Tip text={manifestByPrefix.has(prefix)
-							? `Click to add ${prefix}: — URI will be pre-filled from the known vocabulary`
-							: `Click to add a namespace for ${prefix}:`}>
-							<button
-								type="button"
-								onclick={() => startDeclare(prefix)}
-								class="inline-flex items-center gap-1 rounded border border-amber-600/60 bg-amber-500 px-2 py-0.5 font-mono text-[11px] font-medium text-white shadow-sm hover:bg-amber-600 transition-colors"
-							>
-								<span>{prefix}:</span>
-								{#if manifestByPrefix.has(prefix)}
-									<span class="rounded bg-white/25 px-1 text-[9px] uppercase tracking-wider">known</span>
-								{/if}
-							</button>
-						</Tip>
 					{/if}
+					<Tip text={manifestByPrefix.has(prefix)
+						? `Click to add ${prefix}: — URI will be pre-filled from the known vocabulary`
+						: `Click to add a namespace for ${prefix}:`}>
+						<button
+							type="button"
+							onclick={() => startDeclare(prefix)}
+							class="inline-flex items-center gap-1 rounded border border-amber-600/60 bg-amber-500 px-2 py-0.5 font-mono text-[11px] font-medium text-white shadow-sm hover:bg-amber-600 transition-colors {editingPrefix === prefix ? 'hidden' : ''}"
+						>
+							<span>{prefix}:</span>
+							{#if manifestByPrefix.has(prefix)}
+								<span class="rounded bg-white/25 px-1 text-[9px] uppercase tracking-wider">known</span>
+							{/if}
+						</button>
+					</Tip>
 				{/each}
 			</div>
 		</div>

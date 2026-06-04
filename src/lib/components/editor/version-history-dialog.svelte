@@ -207,7 +207,13 @@
 									<p class="text-[10px] text-muted-foreground mt-0.5">{getDiffText(i)}</p>
 								</div>
 
-								<!-- Actions -->
+								<!--
+									Actions. The confirm prompt and the icon buttons are
+									toggled with `hidden` classes rather than an {#if}/{:else}
+									swap: swapping would destroy the Tip-wrapped buttons
+									(whose Tooltip trigger was just hovered) mid-flush and
+									trip Svelte's derived_inert warning.
+								-->
 								<div class="flex items-center gap-0.5 shrink-0">
 									{#if confirmRestoreId === snapshot.id}
 										<div class="flex items-center gap-1 text-[10px]">
@@ -215,28 +221,27 @@
 											<Button size="sm" class="h-5 px-1.5 text-[10px]" onclick={() => handleRestore(snapshot)}>Yes</Button>
 											<Button size="sm" variant="ghost" class="h-5 px-1.5 text-[10px]" onclick={() => (confirmRestoreId = null)}>No</Button>
 										</div>
-									{:else}
-										<Tip text="Restore this version">
-											<Button
-												variant="ghost"
-												size="icon"
-												class="h-6 w-6 text-muted-foreground hover:text-foreground"
-												onclick={() => (confirmRestoreId = snapshot.id ?? null)}
-											>
-												<RotateCcw class="h-3 w-3" />
-											</Button>
-										</Tip>
-										<Tip text="Delete this version">
-											<Button
-												variant="ghost"
-												size="icon"
-												class="h-6 w-6 text-muted-foreground hover:text-destructive"
-												onclick={() => { if (snapshot.id != null) handleDelete(snapshot.id); }}
-											>
-												<Trash2 class="h-3 w-3" />
-											</Button>
-										</Tip>
 									{/if}
+									<Tip text="Restore this version">
+										<Button
+											variant="ghost"
+											size="icon"
+											class="h-6 w-6 text-muted-foreground hover:text-foreground {confirmRestoreId === snapshot.id ? 'hidden' : ''}"
+											onclick={() => (confirmRestoreId = snapshot.id ?? null)}
+										>
+											<RotateCcw class="h-3 w-3" />
+										</Button>
+									</Tip>
+									<Tip text="Delete this version">
+										<Button
+											variant="ghost"
+											size="icon"
+											class="h-6 w-6 text-muted-foreground hover:text-destructive {confirmRestoreId === snapshot.id ? 'hidden' : ''}"
+											onclick={() => { if (snapshot.id != null) handleDelete(snapshot.id); }}
+										>
+											<Trash2 class="h-3 w-3" />
+										</Button>
+									</Tip>
 								</div>
 							</div>
 						</div>
