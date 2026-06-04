@@ -1,10 +1,12 @@
 /**
- * Built-in example profiles.
+ * @fileoverview Built-in example profiles.
  *
  * Example source files live in `./data/` and are imported as build-time
  * strings via Vite's `?raw` suffix. This keeps examples fully offline
  * (no `fetch`, no base-path handling) and routes them through the same
  * import path a user-picked file would take.
+ *
+ * @module examples
  */
 import type { Flavor } from '$lib/types';
 import tbbtSimpledsp from './data/tbbt-simpledsp.tsv?raw';
@@ -12,10 +14,13 @@ import srapAprilModel from './data/srap-april-model.csv?raw';
 
 // ── Types ───────────────────────────────────────────────────────
 
+/** Identifiers of the bundled examples. */
+export type ExampleId = 'tbbt' | 'srap-april';
+
 /** A bundled example application profile. */
 export interface ProfileExample {
 	/** Stable identifier, used by the dashboard quick buttons. */
-	id: string;
+	id: ExampleId;
 	/** Which flavor this example is authored in. */
 	flavor: Flavor;
 	/** Card title; also the default project name when loaded. */
@@ -24,7 +29,8 @@ export interface ProfileExample {
 	description: string;
 	/**
 	 * File name presented to the importer. The extension determines
-	 * which parser runs (`.tsv` → SimpleDSP, `.csv` → DCTAP).
+	 * which parser runs — by convention SimpleDSP examples use `.tsv`
+	 * and DCTAP examples use `.csv`.
 	 */
 	fileName: string;
 	/** Raw file content, imported at build time via `?raw`. */
@@ -67,7 +73,7 @@ export const EXAMPLES: ProfileExample[] = [
  * @example
  * const ex = getExample('srap-april');
  */
-export function getExample(id: string): ProfileExample | undefined {
+export function getExample(id: ExampleId): ProfileExample | undefined {
 	return EXAMPLES.find((e) => e.id === id);
 }
 
@@ -79,8 +85,8 @@ export function getExample(id: string): ProfileExample | undefined {
  * @returns A `File` carrying the example's raw text and file name.
  *
  * @example
- * const file = exampleToFile(getExample('tbbt')!);
- * await processImportedFile(file);
+ * const ex = getExample('tbbt');
+ * if (ex) await processImportedFile(exampleToFile(ex));
  */
 export function exampleToFile(ex: ProfileExample): File {
 	return new File([ex.raw], ex.fileName, { type: 'text/plain' });

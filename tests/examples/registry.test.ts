@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { EXAMPLES, getExample, exampleToFile } from '$lib/examples';
+import { EXAMPLES, getExample, exampleToFile, type ExampleId } from '$lib/examples';
 import { parseSimpleDsp } from '$lib/converters/simpledsp-parser';
 import { parseCsvRows, isDctapFormat } from '$lib/components/editor/import-handler';
 import { dctapRowsToTapir, type DctapRow } from '$lib/converters/dctap-parser';
@@ -34,12 +34,11 @@ describe('EXAMPLES registry', () => {
 
 describe('getExample', () => {
 	it('returns the matching example by id', () => {
-		const first = EXAMPLES[0];
-		expect(getExample(first.id)?.id).toBe(first.id);
+		expect(getExample('tbbt')).toBe(EXAMPLES.find((e) => e.id === 'tbbt'));
 	});
 
 	it('returns undefined for an unknown id', () => {
-		expect(getExample('does-not-exist')).toBeUndefined();
+		expect(getExample('does-not-exist' as ExampleId)).toBeUndefined();
 	});
 });
 
@@ -59,14 +58,18 @@ describe('exampleToFile', () => {
 
 describe('example content is parseable', () => {
 	it('the SimpleDSP example parses without errors', () => {
-		const ex = EXAMPLES.find((e) => e.flavor === 'simpledsp')!;
+		const ex = EXAMPLES.find((e) => e.flavor === 'simpledsp');
+		expect(ex).toBeDefined();
+		if (!ex) return;
 		const { data, errors } = parseSimpleDsp(ex.raw, ex.title);
 		expect(errors).toHaveLength(0);
 		expect(data.descriptions.length).toBeGreaterThan(0);
 	});
 
 	it('the DCTAP example parses without errors', () => {
-		const ex = EXAMPLES.find((e) => e.flavor === 'dctap')!;
+		const ex = EXAMPLES.find((e) => e.flavor === 'dctap');
+		expect(ex).toBeDefined();
+		if (!ex) return;
 		const rows = parseCsvRows(ex.raw, ',');
 		const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
 		expect(isDctapFormat(headers)).toBe(true);
