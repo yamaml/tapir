@@ -23,7 +23,10 @@ export interface ProfileExample {
 	id: ExampleId;
 	/** Which flavor this example is authored in. */
 	flavor: Flavor;
-	/** Card title; also the default project name when loaded. */
+	/**
+	 * Card title shown in the dialog. The loaded project's name is
+	 * derived from `fileName` (matching normal file import), not this.
+	 */
 	title: string;
 	/** One-line description shown on the example card. */
 	description: string;
