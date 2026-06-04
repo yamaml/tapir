@@ -429,7 +429,14 @@
 
 			<!-- Search -->
 			<Tip text="Search properties across the profile" shortcut="Ctrl+K">
-				<Button variant="ghost" size="sm" class="h-7 px-2 text-xs" onclick={toggleSearch}>
+				<Button
+					variant="ghost"
+					size="sm"
+					class="h-7 px-2 text-xs"
+					onclick={toggleSearch}
+					aria-label="Search statements"
+					aria-expanded={searchVisible}
+				>
 					<SearchIcon class="h-3.5 w-3.5" />
 				</Button>
 			</Tip>
