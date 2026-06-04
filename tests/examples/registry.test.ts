@@ -4,6 +4,7 @@ import { parseSimpleDsp } from '$lib/converters/simpledsp-parser';
 import { parseCsvRows, isDctapFormat } from '$lib/components/editor/import-handler';
 import { dctapRowsToTapir, type DctapRow } from '$lib/converters/dctap-parser';
 import { buildDiagram } from '$lib/converters/diagram-generator';
+import type { TapirProject } from '$lib/types';
 
 // ── Registry shape ──────────────────────────────────────────────
 
@@ -115,6 +116,50 @@ describe('every example encodes relationships that draw diagram edges', () => {
 
 			// The diagram must actually draw edges (DOT uses `->`).
 			expect(buildDiagram(data)).toContain('->');
+		});
+	}
+});
+
+// ── SimpleDSP examples declare every prefix they use ────────────
+// SimpleDSP has a namespace block, so a complete example declares all
+// its prefixes — otherwise the editor's undeclared-prefixes banner
+// prompts the user to add them. This replicates that banner's exact
+// detection (undeclared-prefixes-banner.svelte) and requires zero.
+// DCTAP has no namespace block, so it is exempt by design.
+
+/** Prefixes referenced anywhere in the project that are not declared. */
+function undeclaredPrefixes(project: TapirProject): string[] {
+	const found = new Set<string>();
+	const collect = (s: string | undefined | null) => {
+		if (!s) return;
+		if (/^https?:/.test(s) || s.startsWith('urn:')) return;
+		const colon = s.indexOf(':');
+		if (colon <= 0) return;
+		const p = s.slice(0, colon);
+		if (/^[A-Za-z_][A-Za-z0-9_.-]*$/.test(p)) found.add(p);
+	};
+	const collectList = (xs: string[] | undefined | null) => {
+		if (xs) for (const x of xs) collect(x);
+	};
+	for (const desc of project.descriptions) {
+		collect(desc.targetClass);
+		for (const stmt of desc.statements) {
+			collect(stmt.propertyId);
+			collectList(stmt.datatype);
+			collectList(stmt.classConstraint);
+			collectList(stmt.inScheme);
+		}
+	}
+	const ns = project.namespaces ?? {};
+	return [...found].filter((p) => !(p in ns)).sort();
+}
+
+describe('SimpleDSP examples declare every prefix they use', () => {
+	for (const ex of EXAMPLES.filter((e) => e.flavor === 'simpledsp')) {
+		it(`${ex.id} has no undeclared prefixes`, () => {
+			const { data } = parseExample(ex);
+			const missing = undeclaredPrefixes(data);
+			expect(missing, `undeclared in ${ex.id}: ${missing.join(', ')}`).toEqual([]);
 		});
 	}
 });
