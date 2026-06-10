@@ -3,14 +3,21 @@
  *
  * Provides a writable store for the active TapirProject and helper
  * functions for mutating descriptions and statements. All mutations
- * update the `updatedAt` timestamp.
+ * update the `updatedAt` timestamp and capture the pre-mutation state
+ * on the undo stack (`pushUndo` from the history store), so Ctrl+Z /
+ * Ctrl+Y work for every edit path without per-component wiring.
+ *
+ * The two stores import each other (history-store reads
+ * `currentProject`; this module calls `pushUndo`). Both references
+ * are call-time only, so the ES-module cycle is benign.
  *
  * @module stores/project-store
  */
 
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import type { TapirProject, Description, Statement } from '$lib/types';
 import { createDescription, createStatement } from '$lib/types';
+import { pushUndo } from './history-store';
 
 // ── Store ───────────────────────────────────────────────────────
 
@@ -24,6 +31,7 @@ export const hasProject = derived(currentProject, ($p) => $p !== null);
 
 /** Adds a new description to the project. */
 export function addDescription(init: Partial<Description> & Pick<Description, 'name'>): void {
+	pushUndo();
 	currentProject.update((p) => {
 		if (!p) return p;
 		const desc = createDescription(init);
@@ -37,6 +45,7 @@ export function addDescription(init: Partial<Description> & Pick<Description, 'n
 
 /** Removes a description by ID. Also drops shapeRefs entries that point to it. */
 export function removeDescription(descriptionId: string): void {
+	pushUndo();
 	currentProject.update((p) => {
 		if (!p) return p;
 		const removed = p.descriptions.find((d) => d.id === descriptionId);
@@ -68,6 +77,17 @@ export function updateDescription(
 	descriptionId: string,
 	updates: Partial<Omit<Description, 'id' | 'statements'>>
 ): void {
+	// Skip no-op updates so blur re-commits of unchanged values
+	// neither bump `updatedAt` nor leave dead undo entries.
+	const existing = get(currentProject)?.descriptions.find((d) => d.id === descriptionId);
+	if (!existing) return;
+	const changed = Object.entries(updates).some(
+		([k, v]) => JSON.stringify(existing[k as keyof Description]) !== JSON.stringify(v)
+	);
+	if (!changed) return;
+
+	// Coalesce keystroke-level edits to the same fields into one undo step.
+	pushUndo(`desc:${descriptionId}:${Object.keys(updates).sort().join('+')}`);
 	currentProject.update((p) => {
 		if (!p) return p;
 
@@ -105,6 +125,7 @@ export function updateDescription(
 
 /** Reorders descriptions within the project. */
 export function reorderDescriptions(fromIndex: number, toIndex: number): void {
+	pushUndo();
 	currentProject.update((p) => {
 		if (!p) return p;
 		if (fromIndex < 0 || fromIndex >= p.descriptions.length) return p;
@@ -120,6 +141,7 @@ export function reorderDescriptions(fromIndex: number, toIndex: number): void {
 
 /** Adds a statement to a description. */
 export function addStatement(descriptionId: string, init?: Partial<Statement>): void {
+	pushUndo();
 	currentProject.update((p) => {
 		if (!p) return p;
 		const stmt = createStatement(init);
@@ -135,8 +157,14 @@ export function addStatement(descriptionId: string, init?: Partial<Statement>): 
 	});
 }
 
-/** Removes a statement by ID from a description. */
+/**
+ * Removes a statement by ID from a description.
+ *
+ * Deliberately one-click in the UI (no confirm dialog) — the
+ * pre-deletion state is on the undo stack, so Ctrl+Z recovers it.
+ */
 export function removeStatement(descriptionId: string, statementId: string): void {
+	pushUndo();
 	currentProject.update((p) => {
 		if (!p) return p;
 		return {
@@ -157,6 +185,19 @@ export function updateStatement(
 	statementId: string,
 	updates: Partial<Omit<Statement, 'id'>>
 ): void {
+	// Skip no-op updates so blur re-commits of unchanged values
+	// neither bump `updatedAt` nor leave dead undo entries.
+	const existing = get(currentProject)
+		?.descriptions.find((d) => d.id === descriptionId)
+		?.statements.find((s) => s.id === statementId);
+	if (!existing) return;
+	const changed = Object.entries(updates).some(
+		([k, v]) => JSON.stringify(existing[k as keyof Statement]) !== JSON.stringify(v)
+	);
+	if (!changed) return;
+
+	// Coalesce keystroke-level edits to the same fields into one undo step.
+	pushUndo(`stmt:${descriptionId}:${statementId}:${Object.keys(updates).sort().join('+')}`);
 	currentProject.update((p) => {
 		if (!p) return p;
 		return {
@@ -178,6 +219,7 @@ export function updateStatement(
 
 /** Duplicates a statement within a description, inserting the copy after the original. */
 export function duplicateStatement(descriptionId: string, statementId: string): void {
+	pushUndo();
 	currentProject.update((p) => {
 		if (!p) return p;
 		return {
@@ -205,6 +247,7 @@ export function reorderStatements(
 	fromIndex: number,
 	toIndex: number
 ): void {
+	pushUndo();
 	currentProject.update((p) => {
 		if (!p) return p;
 		return {
@@ -227,14 +270,17 @@ export function reorderStatements(
 
 /** Updates the project's namespace map. */
 export function setNamespaces(namespaces: Record<string, string>): void {
+	pushUndo();
 	currentProject.update((p) => {
 		if (!p) return p;
 		return { ...p, namespaces, updatedAt: new Date().toISOString() };
 	});
 }
 
-/** Updates the project's base IRI. */
+/** Updates the project's base IRI. No-op when unchanged. */
 export function setBase(base: string): void {
+	if (get(currentProject)?.base === base) return;
+	pushUndo('project:base');
 	currentProject.update((p) => {
 		if (!p) return p;
 		return { ...p, base, updatedAt: new Date().toISOString() };
@@ -245,6 +291,8 @@ export function setBase(base: string): void {
 export function setProjectName(name: string): void {
 	const trimmed = name.trim();
 	if (!trimmed) return;
+	if (get(currentProject)?.name === trimmed) return;
+	pushUndo('project:name');
 	currentProject.update((p) => {
 		if (!p) return p;
 		if (p.name === trimmed) return p;
@@ -255,6 +303,8 @@ export function setProjectName(name: string): void {
 /** Updates the project's optional one-line description. */
 export function setProjectDescription(description: string): void {
 	const trimmed = description.trim();
+	if ((get(currentProject)?.description ?? '') === trimmed) return;
+	pushUndo('project:description');
 	currentProject.update((p) => {
 		if (!p) return p;
 		if ((p.description ?? '') === trimmed) return p;
@@ -275,7 +325,16 @@ export function setProjectDescription(description: string): void {
  */
 export function renamePrefix(oldPrefix: string, newPrefix: string): boolean {
 	if (oldPrefix === newPrefix) return true;
+
+	// Pre-check against the live state so a rejected rename neither
+	// mutates the project nor leaves a dead entry on the undo stack.
+	const current = get(currentProject);
+	if (!current) return false;
+	if (!(oldPrefix in current.namespaces)) return false;
+	if (newPrefix in current.namespaces) return false; // collision
+
 	let success = false;
+	pushUndo();
 	currentProject.update((p) => {
 		if (!p) return p;
 		if (!(oldPrefix in p.namespaces)) return p;
@@ -287,7 +346,9 @@ export function renamePrefix(oldPrefix: string, newPrefix: string): boolean {
 			namespaces[k === oldPrefix ? newPrefix : k] = v;
 		}
 
-		const oldRe = new RegExp(`^${oldPrefix.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}:`);
+		// Escape regex metacharacters so prefixes like "a.b" match only
+		// themselves (not "axb") and "a(b" doesn't throw a SyntaxError.
+		const oldRe = new RegExp(`^${oldPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:`);
 		const swap = (s: string): string => oldRe.test(s) ? s.replace(oldRe, `${newPrefix}:`) : s;
 		const swapList = (xs: string[] | undefined): string[] | undefined =>
 			xs ? xs.map(swap) : xs;
