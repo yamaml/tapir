@@ -12,8 +12,8 @@
  * | shapeLabel          | Description.label                   |
  * | propertyID          | Statement.propertyId                |
  * | propertyLabel       | Statement.label                     |
- * | mandatory           | Statement.min (1 or 0)              |
- * | repeatable          | Statement.max (null or 1)           |
+ * | mandatory           | Statement.min (TRUE→1, FALSE→0, empty→unset) |
+ * | repeatable          | Statement.max (TRUE→null=unbounded, FALSE→1, empty→unset) |
  * | valueNodeType       | Statement.valueType (iri/literal/bnode) |
  * | valueDataType       | Statement.datatype                  |
  * | valueShape          | Statement.shapeRef                  |
@@ -291,17 +291,33 @@ export function dctapRowsToTapir(
 		// New shape introduced
 		if (shapeID) {
 			currentShapeID = shapeID;
+			const label = String(row.shapeLabel || '').trim();
+			const headerNote = !propertyID ? String(row.note || '').trim() : '';
 			if (!descMap.has(currentShapeID)) {
-				const label = String(row.shapeLabel || '').trim();
 				const desc = createDescription({ name: currentShapeID });
 				if (label) desc.label = label;
-				if (!propertyID) {
-					const note = String(row.note || '').trim();
-					if (note) desc.note = note;
-				}
+				if (headerNote) desc.note = headerNote;
 				descMap.set(currentShapeID, desc);
 				usedKeysMap.set(currentShapeID, new Set<string>());
 				descriptions.push(desc);
+			} else {
+				// Later rows may re-state the shape with label/note that
+				// the first row lacked — merge instead of dropping.
+				const desc = descMap.get(currentShapeID)!;
+				if (label && !desc.label) desc.label = label;
+				else if (label && desc.label && label !== desc.label) {
+					warnings.push({
+						line: rowIndex + 1,
+						message: `Row ${rowIndex + 1}: shapeLabel "${label}" conflicts with earlier "${desc.label}" for shape "${currentShapeID}" — keeping the first`,
+					});
+				}
+				if (headerNote && !desc.note) desc.note = headerNote;
+				else if (headerNote && desc.note && headerNote !== desc.note) {
+					warnings.push({
+						line: rowIndex + 1,
+						message: `Row ${rowIndex + 1}: shape note conflicts with an earlier note for shape "${currentShapeID}" — keeping the first`,
+					});
+				}
 			}
 		}
 
@@ -337,7 +353,16 @@ export function dctapRowsToTapir(
 		const propertyLabel = String(row.propertyLabel || '').trim();
 		if (propertyLabel) stmt.label = propertyLabel;
 
-		// Value node type
+		// Value node type. DCTAP allows multiple node kinds in one cell
+		// (e.g. SRAP's "IRI BNODE"); the Tapir model holds one, so keep
+		// the first and warn about the rest.
+		const nodeTypeTokens = String(row.valueNodeType || '').trim().split(/\s+/).filter(Boolean);
+		if (nodeTypeTokens.length > 1) {
+			warnings.push({
+				line: rowIndex + 1,
+				message: `Row ${rowIndex + 1} (${propertyID}): multiple valueNodeType tokens "${nodeTypeTokens.join(' ')}" — keeping "${nodeTypeTokens[0]}"`,
+			});
+		}
 		const valueType = fromValueNodeType(row.valueNodeType);
 		if (valueType) stmt.valueType = valueType;
 
@@ -348,13 +373,13 @@ export function dctapRowsToTapir(
 			stmt.datatype = dataType.split(/\s+/).filter(Boolean);
 		}
 
-		// Cardinality
+		// Cardinality. Empty cells stay unset (undefined) so the export
+		// round-trips them as empty; TRUE repeatable is the *explicitly
+		// unbounded* null (see types/profile.ts).
 		const mandatory = parseBool(row.mandatory);
 		const repeatable = parseBool(row.repeatable);
 		if (mandatory != null) stmt.min = mandatory ? 1 : 0;
-		if (repeatable != null) {
-			stmt.max = repeatable ? null : 1;
-		}
+		if (repeatable != null) stmt.max = repeatable ? null : 1;
 
 		// Shape reference(s). DCTAP's spec cardinality is "zero or one",
 		// but DCMI's SRAP profile uses space-separated multi-shape as a

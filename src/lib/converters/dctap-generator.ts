@@ -29,6 +29,7 @@
  */
 
 import type { TapirProject, Statement } from '$lib/types';
+import type { GeneratorWarning } from '$lib/types/export';
 
 // ── Constants ───────────────────────────────────────────────────
 
@@ -56,10 +57,14 @@ export type DctapOutputRow = Record<(typeof DCTAP_COLUMNS)[number], string>;
 /**
  * Resolves the DCTAP `mandatory` flag from Tapir min cardinality.
  *
+ * `undefined` (and legacy `null`) means unspecified and exports as
+ * an empty cell; `min >= 1` → `TRUE`; `min 0` → `FALSE`. Exactly
+ * reverses the importer's mapping.
+ *
  * @param min - The Statement.min value.
  * @returns `"TRUE"`, `"FALSE"`, or empty string.
  */
-export function toMandatory(min: number | null): string {
+export function toMandatory(min: number | null | undefined): string {
 	if (min == null) return '';
 	return min >= 1 ? 'TRUE' : 'FALSE';
 }
@@ -67,13 +72,18 @@ export function toMandatory(min: number | null): string {
 /**
  * Resolves the DCTAP `repeatable` flag from Tapir max cardinality.
  *
+ * `undefined` = unspecified → empty cell; `null` = explicitly
+ * unbounded → `TRUE`; `max > 1` → `TRUE`; `max ≤ 1` → `FALSE`.
+ * Exactly reverses the importer's mapping — unlike the previous
+ * implementation, an unset `repeatable` no longer fabricates `TRUE`
+ * just because `mandatory` was set.
+ *
  * @param max - The Statement.max value.
- * @param min - The Statement.min value (used to detect "unset" state).
  * @returns `"TRUE"`, `"FALSE"`, or empty string.
  */
-export function toRepeatable(max: number | null, min: number | null): string {
-	if (min == null && max == null) return '';
-	if (max == null) return 'TRUE';
+export function toRepeatable(max: number | null | undefined): string {
+	if (max === undefined) return '';
+	if (max === null) return 'TRUE';
 	return max > 1 ? 'TRUE' : 'FALSE';
 }
 
@@ -106,34 +116,49 @@ export function toValueNodeType(type: string): string {
  *      field appropriate to that type (values / pattern / facets /
  *      inScheme). This lets the user pick `languageTag` or `IRIstem`
  *      without guessing at heuristics.
- *   2. Otherwise, heuristic based on which structural field is set:
- *      values → picklist, pattern → pattern, inScheme → IRIstem,
- *      facets → the corresponding facet type.
+ *   2. Otherwise, heuristic based on which structural field is set,
+ *      in the cross-implementation precedence order (matching
+ *      yama-cli): inScheme → IRIstem, then values → picklist, then
+ *      pattern, then facets.
  *
  * DCTAP serialisation uses comma-separated lists inside a single cell
  * (per the spec's examples: `History,Science,Art` and `en,fr,zh-Hans`).
+ * List members that themselves contain commas cannot survive the
+ * round-trip; a warning is recorded when that happens.
  *
  * @param stmt - The statement to extract constraints from.
+ * @param warnings - Optional accumulator for lossy-serialisation warnings.
  * @returns Object with `valueConstraint` and `valueConstraintType` strings.
  */
-export function toValueConstraint(stmt: Statement): {
+export function toValueConstraint(
+	stmt: Statement,
+	warnings?: GeneratorWarning[]
+): {
 	valueConstraint: string;
 	valueConstraintType: string;
 } {
 	const userType = (stmt.constraintType || '').trim();
+	const joinList = (items: string[], kind: string): string => {
+		if (items.some((v) => v.includes(','))) {
+			warnings?.push({
+				message: `Statement "${stmt.label || stmt.propertyId || stmt.id}": ${kind} value containing a comma cannot be represented losslessly in DCTAP's comma-separated cell`,
+			});
+		}
+		return items.join(',');
+	};
 
 	// 1. Explicit user-set constraintType wins — route to the right source.
 	if (userType) {
 		const normalised = userType.toLowerCase();
 		if (normalised === 'picklist' && stmt.values?.length) {
-			return { valueConstraint: stmt.values.join(','), valueConstraintType: 'picklist' };
+			return { valueConstraint: joinList(stmt.values, 'picklist'), valueConstraintType: 'picklist' };
 		}
 		if (normalised === 'languagetag' && stmt.values?.length) {
-			return { valueConstraint: stmt.values.join(','), valueConstraintType: 'languageTag' };
+			return { valueConstraint: joinList(stmt.values, 'languageTag'), valueConstraintType: 'languageTag' };
 		}
 		if (normalised === 'iristem' && (stmt.inScheme?.length || stmt.values?.length)) {
 			const stems = (stmt.inScheme?.length ? stmt.inScheme : stmt.values) ?? [];
-			return { valueConstraint: stems.join(','), valueConstraintType: 'IRIstem' };
+			return { valueConstraint: joinList(stems, 'IRIstem'), valueConstraintType: 'IRIstem' };
 		}
 		if (normalised === 'pattern' && stmt.pattern) {
 			return { valueConstraint: stmt.pattern, valueConstraintType: 'pattern' };
@@ -152,12 +177,12 @@ export function toValueConstraint(stmt: Statement): {
 		}
 	}
 
-	// 2. Heuristic fallback.
-	if (Array.isArray(stmt.values) && stmt.values.length > 0) {
-		return { valueConstraint: stmt.values.join(','), valueConstraintType: 'picklist' };
-	}
+	// 2. Heuristic fallback — inScheme first (D2; matches yama-cli).
 	if (Array.isArray(stmt.inScheme) && stmt.inScheme.length > 0) {
-		return { valueConstraint: stmt.inScheme.join(','), valueConstraintType: 'IRIstem' };
+		return { valueConstraint: joinList(stmt.inScheme, 'IRIstem'), valueConstraintType: 'IRIstem' };
+	}
+	if (Array.isArray(stmt.values) && stmt.values.length > 0) {
+		return { valueConstraint: joinList(stmt.values, 'picklist'), valueConstraintType: 'picklist' };
 	}
 	if (stmt.pattern) {
 		return { valueConstraint: stmt.pattern, valueConstraintType: 'pattern' };
@@ -206,15 +231,36 @@ function normaliseFacetName(lower: string): string {
 
 // ── Main Generator ──────────────────────────────────────────────
 
+/** An all-empty DCTAP row, used as the base for header rows. */
+function emptyRow(): DctapOutputRow {
+	return {
+		shapeID: '',
+		shapeLabel: '',
+		propertyID: '',
+		propertyLabel: '',
+		mandatory: '',
+		repeatable: '',
+		valueNodeType: '',
+		valueDataType: '',
+		valueConstraint: '',
+		valueConstraintType: '',
+		valueShape: '',
+		note: '',
+	};
+}
+
 /**
  * Converts a `TapirProject` to DCTAP row objects.
  *
- * Each description becomes one or more rows. The first statement row
- * in each description carries the `shapeID` and `shapeLabel`;
- * subsequent rows leave those columns empty.
+ * Each description becomes one or more rows. The `shapeID` and
+ * `shapeLabel` are carried by the **first emitted** row of the shape
+ * (not blindly statement index 0, which may be skipped for having no
+ * property — that previously detached the whole shape on re-import).
  *
- * Descriptions with no statements produce a single row with only
- * `shapeID`, `shapeLabel`, and optionally `note`.
+ * A dedicated shape header row (shapeID/shapeLabel/note, no
+ * propertyID) is emitted when the description has a `note` — which
+ * has no other home in DCTAP — or when it has no emittable statement
+ * rows at all.
  *
  * @param project - The Tapir project to export.
  * @param options - When `includeEmptyStatements` is true, statements
@@ -222,6 +268,7 @@ function normaliseFacetName(lower: string): string {
  *   skipped. The default (false) matches the DCTAP CSV file format —
  *   spec-conforming output omits incomplete statements. The Raw Table
  *   editor passes true so users can see and fill in unfinished rows.
+ *   `warnings` is an optional accumulator for lossy-mapping warnings.
  * @returns Array of row objects with DCTAP column keys.
  *
  * @example
@@ -230,46 +277,43 @@ function normaliseFacetName(lower: string): string {
  */
 export function buildDctapRows(
 	project: TapirProject,
-	options: { includeEmptyStatements?: boolean } = {},
+	options: { includeEmptyStatements?: boolean; warnings?: GeneratorWarning[] } = {},
 ): DctapOutputRow[] {
 	const descriptions = project.descriptions || [];
 	const rows: DctapOutputRow[] = [];
 	const includeEmpty = options.includeEmptyStatements === true;
+	const warnings = options.warnings;
 
 	for (const desc of descriptions) {
-		const statements = desc.statements || [];
+		const statements = (desc.statements || []).filter(
+			(stmt) => stmt.propertyId || includeEmpty
+		);
 
-		if (statements.length === 0) {
+		// Dedicated shape header row: carries the description's note
+		// (statement rows' note column belongs to the statements), and
+		// guarantees the shape appears even with no statement rows.
+		const needsHeaderRow = statements.length === 0 || !!desc.note;
+		if (needsHeaderRow) {
 			rows.push({
+				...emptyRow(),
 				shapeID: desc.name,
 				shapeLabel: desc.label || '',
-				propertyID: '',
-				propertyLabel: '',
-				mandatory: '',
-				repeatable: '',
-				valueNodeType: '',
-				valueDataType: '',
-				valueConstraint: '',
-				valueConstraintType: '',
-				valueShape: '',
 				note: desc.note || '',
 			});
-			continue;
 		}
 
 		for (let i = 0; i < statements.length; i++) {
 			const stmt = statements[i];
-			if (!stmt.propertyId && !includeEmpty) continue;
-
-			const { valueConstraint, valueConstraintType } = toValueConstraint(stmt);
+			const isFirstEmitted = !needsHeaderRow && i === 0;
+			const { valueConstraint, valueConstraintType } = toValueConstraint(stmt, warnings);
 
 			rows.push({
-				shapeID: i === 0 ? desc.name : '',
-				shapeLabel: i === 0 ? (desc.label || '') : '',
+				shapeID: isFirstEmitted ? desc.name : '',
+				shapeLabel: isFirstEmitted ? (desc.label || '') : '',
 				propertyID: stmt.propertyId,
 				propertyLabel: stmt.label || '',
 				mandatory: toMandatory(stmt.min),
-				repeatable: toRepeatable(stmt.max, stmt.min),
+				repeatable: toRepeatable(stmt.max),
 				valueNodeType: toValueNodeType(stmt.valueType),
 				valueDataType: (stmt.datatype || []).join(' '),
 				valueConstraint,

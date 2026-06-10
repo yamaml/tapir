@@ -5,8 +5,14 @@
 
 // ── Format Types ────────────────────────────────────────────────
 
-/** RDF serialization formats. */
-export type RdfFormat = 'turtle' | 'jsonld' | 'ntriples' | 'nquads' | 'trig';
+/**
+ * RDF serialization formats.
+ *
+ * All four are N3.Writer formats. JSON-LD is deliberately absent: it
+ * was previously advertised here but silently degraded to N-Triples,
+ * which lied to callers — re-add it only with a real serializer.
+ */
+export type RdfFormat = 'turtle' | 'ntriples' | 'nquads' | 'trig';
 
 /** Diagram visual styles. */
 export type DiagramStyle = 'color' | 'bw' | 'overview' | 'overview-bw';
@@ -43,4 +49,41 @@ export interface ParseMessage {
 	line?: number;
 	field?: string;
 	message: string;
+}
+
+// ── Generator Warnings ──────────────────────────────────────────
+
+/**
+ * A warning produced while generating an export artefact (lossy
+ * mapping, sanitised cell, unresolvable prefix, etc.).
+ *
+ * Generators accept an optional accumulator array so existing
+ * call sites keep working; callers that care pass an array and
+ * surface the collected messages.
+ */
+export interface GeneratorWarning {
+	message: string;
+}
+
+// ── Diagram Export Settings ─────────────────────────────────────
+
+/**
+ * Display configuration consumed by the standalone SVG export
+ * builder. Structurally compatible with the diagram-settings store's
+ * `DiagramSettings` — defined here so converters stay free of
+ * store-layer imports.
+ */
+export interface DiagramExportSettings {
+	/** Colour palette: colour for screen, B&W for print. */
+	palette: 'color' | 'bw';
+	/** Whether cross-reference edges between shapes are drawn. */
+	showEdges: boolean;
+	/** Whether edge text annotations are drawn (needs `showEdges`). */
+	showEdgeLabels: boolean;
+	/** Whether the per-row cardinality column renders. */
+	showCardinality: boolean;
+	/** Whether each statement's human-readable label is shown. */
+	showLabel: boolean;
+	/** Whether the property IRI is shown. */
+	showProperty: boolean;
 }

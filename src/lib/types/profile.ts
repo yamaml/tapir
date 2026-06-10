@@ -64,8 +64,18 @@ export interface Statement {
 	id: string;
 	label: string;
 	propertyId: string;
-	min: number | null;
-	max: number | null;
+	/**
+	 * Minimum cardinality. `undefined` (absent) = unspecified — the
+	 * DCTAP `mandatory` cell round-trips as empty. `null` is treated
+	 * the same as unspecified (legacy data may contain it).
+	 */
+	min?: number | null;
+	/**
+	 * Maximum cardinality. `undefined` (absent) = unspecified (DCTAP
+	 * `repeatable` round-trips as empty); `null` = **explicitly
+	 * unbounded** (DCTAP `repeatable: TRUE`, SimpleDSP `-`).
+	 */
+	max?: number | null;
 	cardinalityNote: string;
 	valueType: ValueType;
 	/**
@@ -98,8 +108,8 @@ export interface Statement {
 	 * Reference(s) to description templates. Empty array when none.
 	 * DCTAP emits space-separated (SRAP convention, e.g. "Person Organization").
 	 * SHACL/ShEx/OWL-DSP emit disjunctions (sh:or, OR, owl:unionOf).
-	 * SimpleDSP's spec allows only one shape per statement — multi-ref
-	 * export is lossy (first ref emitted, others dropped with a warning).
+	 * SimpleDSP emits all refs space-separated (`#A #B`) — a Tapir/YAMA
+	 * extension of the single-ref 2010 spec; the parser reads both forms.
 	 */
 	shapeRefs: string[];
 	note: string;
@@ -235,8 +245,7 @@ export function createStatement(init?: Partial<Statement>): Statement {
 		id: uuid(),
 		label: '',
 		propertyId: '',
-		min: null,
-		max: null,
+		// min/max stay absent (undefined = unspecified); see Statement.
 		cardinalityNote: '',
 		valueType: '',
 		datatype: [],

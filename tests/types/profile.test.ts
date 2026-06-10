@@ -49,8 +49,10 @@ describe('createStatement', () => {
 		const stmt = createStatement({ propertyId: 'foaf:name' });
 		expect(stmt.id).toBeTruthy();
 		expect(stmt.propertyId).toBe('foaf:name');
-		expect(stmt.min).toBeNull();
-		expect(stmt.max).toBeNull();
+		// min/max default to absent: undefined = unspecified (DECISION:
+		// null max means explicitly unbounded — see types/profile.ts).
+		expect(stmt.min).toBeUndefined();
+		expect(stmt.max).toBeUndefined();
 		expect(stmt.valueType).toBe('');
 		expect(stmt.values).toEqual([]);
 		expect(stmt.facets).toEqual({});

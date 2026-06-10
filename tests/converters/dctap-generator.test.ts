@@ -61,21 +61,26 @@ describe('toMandatory', () => {
 // ── toRepeatable ────────────────────────────────────────────────
 
 describe('toRepeatable', () => {
-	it('returns TRUE for null max (unbounded)', () => {
-		expect(toRepeatable(null, 0)).toBe('TRUE');
-		expect(toRepeatable(null, 1)).toBe('TRUE');
+	it('returns TRUE for null max (explicitly unbounded)', () => {
+		expect(toRepeatable(null)).toBe('TRUE');
 	});
 
 	it('returns TRUE for max > 1', () => {
-		expect(toRepeatable(5, 0)).toBe('TRUE');
+		expect(toRepeatable(5)).toBe('TRUE');
 	});
 
 	it('returns FALSE for max 1', () => {
-		expect(toRepeatable(1, 0)).toBe('FALSE');
+		expect(toRepeatable(1)).toBe('FALSE');
 	});
 
-	it('returns empty string when both null', () => {
-		expect(toRepeatable(null, null)).toBe('');
+	it('returns empty string when unset (undefined)', () => {
+		expect(toRepeatable(undefined)).toBe('');
+	});
+
+	it('does not fabricate TRUE when only mandatory is set', () => {
+		// mandatory: TRUE alone must re-export with an empty repeatable
+		// cell — max stays undefined regardless of min.
+		expect(toRepeatable(undefined)).toBe('');
 	});
 });
 
@@ -150,6 +155,24 @@ describe('toValueConstraint', () => {
 		const result = toValueConstraint(stmt);
 		expect(result.valueConstraint).toBe('');
 		expect(result.valueConstraintType).toBe('');
+	});
+
+	it('prioritises inScheme over values (D2: matches yama-cli)', () => {
+		const stmt = createStatement({
+			inScheme: ['http://vocab.getty.edu/'],
+			values: ['a', 'b'],
+		});
+		const result = toValueConstraint(stmt);
+		expect(result.valueConstraintType).toBe('IRIstem');
+		expect(result.valueConstraint).toBe('http://vocab.getty.edu/');
+	});
+
+	it('warns when a picklist value contains a comma', () => {
+		const stmt = createStatement({ values: ['a,b', 'c'] });
+		const warnings: { message: string }[] = [];
+		toValueConstraint(stmt, warnings);
+		expect(warnings.length).toBe(1);
+		expect(warnings[0].message).toContain('comma');
 	});
 
 	it('prioritises values over pattern', () => {
