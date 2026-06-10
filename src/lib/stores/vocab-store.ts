@@ -16,6 +16,14 @@ import { SearchIndex, type SearchOptions } from '$lib/vocab/search-index';
 
 const searchIndex = new SearchIndex();
 
+/**
+ * In-flight chunk loads keyed by prefix. Concurrent `loadVocab` calls
+ * for the same prefix (two autocompletes typing the same prefix at
+ * once) await the same promise instead of double-fetching and
+ * double-indexing the chunk.
+ */
+const inFlight = new Map<string, Promise<void>>();
+
 /** Whether the core vocabs are currently loading. */
 export const vocabLoading = writable(false);
 
@@ -66,29 +74,41 @@ export async function loadCoreVocabs(base: string): Promise<void> {
 /**
  * Loads and indexes a single vocabulary chunk by prefix.
  *
- * If the vocabulary is already loaded, this is a no-op.
+ * If the vocabulary is already loaded, this is a no-op; if a load for
+ * the same prefix is already in flight, the existing promise is
+ * awaited (no duplicate fetch, no duplicate indexing).
  *
  * @param prefix - The vocabulary prefix (e.g. `"schema"`).
  * @param base - The SvelteKit `base` path.
  */
-export async function loadVocab(prefix: string, base: string): Promise<void> {
+export function loadVocab(prefix: string, base: string): Promise<void> {
 	const current = get(loadedPrefixes);
-	if (current.has(prefix)) return;
+	if (current.has(prefix)) return Promise.resolve();
+
+	const pending = inFlight.get(prefix);
+	if (pending) return pending;
 
 	vocabError.set(null);
 
-	try {
-		const chunk = await loadVocabChunk(prefix, base);
-		searchIndex.addVocab(chunk);
-		loadedPrefixes.update((s) => {
-			const next = new Set(s);
-			next.add(chunk.prefix);
-			return next;
-		});
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		vocabError.set(message);
-	}
+	const load = (async () => {
+		try {
+			const chunk = await loadVocabChunk(prefix, base);
+			searchIndex.addVocab(chunk);
+			loadedPrefixes.update((s) => {
+				const next = new Set(s);
+				next.add(chunk.prefix);
+				return next;
+			});
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			vocabError.set(message);
+		} finally {
+			inFlight.delete(prefix);
+		}
+	})();
+
+	inFlight.set(prefix, load);
+	return load;
 }
 
 /**
