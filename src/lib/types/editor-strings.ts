@@ -17,7 +17,12 @@ import type { SimpleDspLang } from './flavor';
 
 // ── Interfaces ──────────────────────────────────────────────────
 
-/** Help text for the smart-table column headers (SimpleDSP set). */
+/**
+ * Help text for the smart-table column headers. The seven required
+ * keys are the SimpleDSP column set, reused by DCTAP for its
+ * equivalent columns (propertyLabel, mandatory, repeatable, …); the
+ * optional keys cover the three DCTAP-only columns.
+ */
 export interface ColumnHelp {
 	name: string;
 	property: string;
@@ -26,6 +31,12 @@ export interface ColumnHelp {
 	valueType: string;
 	constraint: string;
 	note: string;
+	/** DCTAP only: valueDataType column. */
+	datatype?: string;
+	/** DCTAP only: valueConstraintType column. */
+	constraintType?: string;
+	/** DCTAP only: valueShape column. */
+	shapeRefs?: string;
 }
 
 /** Editor UI copy for a flavor + language combination. */
@@ -165,6 +176,27 @@ const DCTAP_STRINGS: EditorStrings = {
 	deleteDialogTitle: 'Delete shape?',
 	deleteDialogBody: (name, n) =>
 		`This will remove "${name}" and its ${n} statement${n === 1 ? '' : 's'} from the profile. You can undo this with Ctrl+Z while the editor is open.`,
+	// DCTAP-specific column help: the spread above must NOT leak the
+	// SimpleDSP copy (which talks about "structured records" and the
+	// composed Constraint cell — wrong for DCTAP's column model).
+	columnHelp: {
+		name: 'Human-readable label for this statement. Not validated; surfaces in generated documentation.',
+		property:
+			'The RDF property this statement constrains, written as a prefixed term (e.g. dcterms:title).',
+		min: 'TRUE if the statement is required (min cardinality ≥ 1); FALSE if optional.',
+		max: 'TRUE if the value can appear multiple times; FALSE if at most one.',
+		valueType:
+			'Is the value an IRI, a literal (text/number/date), or a blank node? Determines which constraint fields are valid.',
+		constraint:
+			'Additional restriction on the value, interpreted per valueConstraintType (picklist values, regex pattern, IRI stem, etc.).',
+		note: 'Free-text comment about this statement. Not validated.',
+		datatype:
+			'XSD datatype the literal value must satisfy (e.g. xsd:string, xsd:date). Multiple chips express alternatives — any of them is acceptable.',
+		constraintType:
+			'How to interpret valueConstraint. picklist = pick from a list; pattern = regex; IRIstem = URI prefix; languageTag = language-tag list; min/maxLength/Inclusive = numeric facets.',
+		shapeRefs:
+			'When the value is an IRI or blank node, the shape it must conform to. Multiple chips express alternatives (DCMI SRAP convention).',
+	},
 };
 
 // ── Resolver ────────────────────────────────────────────────────
