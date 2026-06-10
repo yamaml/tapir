@@ -22,7 +22,7 @@
  */
 
 import type { TapirProject } from '$lib/types';
-import type { DiagramSettings } from '$lib/stores/diagram-settings-store';
+import type { DiagramExportSettings } from '$lib/types/export';
 import {
 	compactIRI,
 	formatCard,
@@ -71,7 +71,7 @@ function esc(s: string): string {
  */
 export async function buildExportSvg(
 	proj: TapirProject,
-	settings: DiagramSettings,
+	settings: DiagramExportSettings,
 ): Promise<string> {
 	const pal = settings.palette === 'bw' ? BW_PALETTE : COLOR_PALETTE;
 	const ns = proj.namespaces || {};
