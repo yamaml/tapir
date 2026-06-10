@@ -12,8 +12,9 @@ import {
 	loadPrefs,
 	DEFAULT_PREFS,
 	resetDb,
+	migrateLegacyDatatype,
 } from '$lib/db';
-import { createProject } from '$lib/types/profile';
+import { createProject, createStatement } from '$lib/types/profile';
 
 beforeEach(async () => {
 	// Close existing connection, then delete the database for a fresh start
@@ -78,6 +79,113 @@ describe('project operations', () => {
 		await deleteProject(project.id);
 		const snapshots = await getSnapshots(project.id);
 		expect(snapshots).toHaveLength(0);
+	});
+
+	it('removes all snapshots atomically and leaves other projects intact', async () => {
+		const doomed = createProject({ name: 'Doomed', flavor: 'simpledsp' });
+		const keeper = createProject({ name: 'Keeper', flavor: 'dctap' });
+		await saveProject(doomed);
+		await saveProject(keeper);
+		for (let i = 0; i < 3; i++) {
+			await saveSnapshot({
+				projectId: doomed.id,
+				label: `d${i}`,
+				timestamp: new Date(2026, 0, 1 + i).toISOString(),
+				data: doomed,
+				auto: i > 0,
+			});
+		}
+		await saveSnapshot({
+			projectId: keeper.id,
+			label: 'k1',
+			timestamp: new Date().toISOString(),
+			data: keeper,
+			auto: false,
+		});
+
+		await deleteProject(doomed.id);
+
+		expect(await loadProject(doomed.id)).toBeUndefined();
+		expect(await getSnapshots(doomed.id)).toHaveLength(0);
+		// The other project and its snapshots are untouched.
+		expect(await loadProject(keeper.id)).toBeDefined();
+		expect(await getSnapshots(keeper.id)).toHaveLength(1);
+	});
+});
+
+describe('legacy datatype migration', () => {
+	it('promotes string datatype to array on direct migration', () => {
+		const project = createProject({ name: 'Legacy', flavor: 'simpledsp' });
+		project.descriptions = [
+			{
+				id: 'd1',
+				name: 'MAIN',
+				label: '',
+				targetClass: '',
+				idPrefix: '',
+				note: '',
+				closed: false,
+				statements: [
+					{
+						...createStatement({ propertyId: 'dcterms:date' }),
+						// Pre-multi-datatype records stored a plain string.
+						datatype: 'xsd:gYear xsd:date' as unknown as string[],
+					},
+				],
+			},
+		];
+		const migrated = migrateLegacyDatatype(project);
+		expect(migrated.descriptions[0].statements[0].datatype).toEqual([
+			'xsd:gYear',
+			'xsd:date',
+		]);
+	});
+
+	it('normalises non-string non-array datatype to an empty array', () => {
+		const project = createProject({ name: 'Legacy2', flavor: 'simpledsp' });
+		project.descriptions = [
+			{
+				id: 'd1',
+				name: 'MAIN',
+				label: '',
+				targetClass: '',
+				idPrefix: '',
+				note: '',
+				closed: false,
+				statements: [
+					{
+						...createStatement({ propertyId: 'ex:p' }),
+						datatype: undefined as unknown as string[],
+					},
+				],
+			},
+		];
+		const migrated = migrateLegacyDatatype(project);
+		expect(migrated.descriptions[0].statements[0].datatype).toEqual([]);
+	});
+
+	it('applies the migration on loadProject (snapshot-restore parity)', async () => {
+		const project = createProject({ name: 'LegacyStore', flavor: 'simpledsp' });
+		project.descriptions = [
+			{
+				id: 'd1',
+				name: 'MAIN',
+				label: '',
+				targetClass: '',
+				idPrefix: '',
+				note: '',
+				closed: false,
+				statements: [
+					{
+						...createStatement({ propertyId: 'dcterms:date' }),
+						datatype: 'xsd:string' as unknown as string[],
+					},
+				],
+			},
+		];
+		await saveProject(project);
+		const loaded = await loadProject(project.id);
+		expect(loaded!.descriptions[0].statements[0].datatype).toEqual(['xsd:string']);
 	});
 });
 
@@ -168,5 +276,23 @@ describe('preferences', () => {
 		await savePrefs(custom);
 		const loaded = await loadPrefs();
 		expect(loaded.editorMode).toBe('smart-table');
+	});
+
+	it('round-trips the persisted editor mode', async () => {
+		await savePrefs({ ...DEFAULT_PREFS, editorMode: 'raw-table' });
+		const loaded = await loadPrefs();
+		expect(loaded.editorMode).toBe('raw-table');
+	});
+
+	it('drops the removed sidebarWidth/diagramPanelWidth legacy fields', async () => {
+		// Simulate a pre-cleanup record carrying the dead schema fields.
+		await savePrefs({
+			...DEFAULT_PREFS,
+			sidebarWidth: 220,
+			diagramPanelWidth: 300,
+		} as unknown as typeof DEFAULT_PREFS);
+		const loaded = await loadPrefs();
+		expect('sidebarWidth' in loaded).toBe(false);
+		expect('diagramPanelWidth' in loaded).toBe(false);
 	});
 });

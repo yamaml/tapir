@@ -57,8 +57,16 @@ function getDb(): Promise<IDBPDatabase> {
  * promotes any string-typed `datatype` to an array on read, splitting
  * on whitespace so values authored as `"xsd:gYear xsd:date"` (the
  * SimpleDSP and SRAP convention) survive the migration without loss.
+ *
+ * Exported so every path that resurrects stored project data runs the
+ * same normalisation: `loadProject` here, and the version-history
+ * restore flow (snapshots saved before the multi-datatype change carry
+ * the legacy shape too).
+ *
+ * @param project - The stored project record (mutated in place).
+ * @returns The same project with normalised `datatype` arrays.
  */
-function migrateLegacyDatatype(project: TapirProject): TapirProject {
+export function migrateLegacyDatatype(project: TapirProject): TapirProject {
 	for (const desc of project.descriptions ?? []) {
 		for (const stmt of desc.statements ?? []) {
 			const dt = (stmt as unknown as { datatype: unknown }).datatype;
@@ -132,14 +140,16 @@ export async function listProjects(): Promise<ProjectMeta[]> {
 		.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
 
-/** Deletes a project and its snapshots. */
+/**
+ * Deletes a project and its snapshots in a single multi-store
+ * transaction, so a failure part-way through can never leave orphaned
+ * snapshots behind (IndexedDB aborts the whole transaction).
+ */
 export async function deleteProject(id: string): Promise<void> {
 	const db = await getDb();
-	await db.delete('projects', id);
-
-	// Also delete associated snapshots
-	const tx = db.transaction('snapshots', 'readwrite');
-	const index = tx.store.index('byProject');
+	const tx = db.transaction(['projects', 'snapshots'], 'readwrite');
+	void tx.objectStore('projects').delete(id);
+	const index = tx.objectStore('snapshots').index('byProject');
 	let cursor = await index.openCursor(id);
 	while (cursor) {
 		await cursor.delete();
@@ -253,6 +263,11 @@ export async function updateSnapshotLabel(id: number, label: string): Promise<vo
  * shared diagram-settings model (style, palette, three display
  * toggles). The diagram fields mirror the live `diagramSettings`
  * store — they're persisted so the settings survive across sessions.
+ *
+ * Note: earlier schema versions declared `sidebarWidth` and
+ * `diagramPanelWidth`, but no resize UI ever shipped (the panels are
+ * fixed-width). The dead fields were removed rather than wired;
+ * `loadPrefs` silently drops them from legacy records.
  */
 export interface UserPrefs {
 	editorMode: 'customized' | 'smart-table' | 'raw-table';
@@ -266,8 +281,6 @@ export interface UserPrefs {
 	showDatatype: boolean;
 	simpleDspLang: 'en' | 'jp';
 	assistanceEnabled: boolean;
-	sidebarWidth: number;
-	diagramPanelWidth: number;
 }
 
 /** Default preferences. */
@@ -283,8 +296,6 @@ export const DEFAULT_PREFS: UserPrefs = {
 	showDatatype: true,
 	simpleDspLang: 'en',
 	assistanceEnabled: true,
-	sidebarWidth: 220,
-	diagramPanelWidth: 300,
 };
 
 /**
@@ -300,9 +311,15 @@ export async function loadPrefs(): Promise<UserPrefs> {
 	const db = await getDb();
 	const raw = (await db.get('prefs', 'user')) as Partial<UserPrefs> & {
 		diagramColorMode?: 'color' | 'bw';
+		sidebarWidth?: number;
+		diagramPanelWidth?: number;
 	} | undefined;
 	if (!raw) return DEFAULT_PREFS;
-	const { diagramColorMode, ...rest } = raw;
+	// Strip legacy fields: `diagramColorMode` migrates to
+	// `diagramPalette`; the never-used panel widths are dropped.
+	const { diagramColorMode, sidebarWidth, diagramPanelWidth, ...rest } = raw;
+	void sidebarWidth;
+	void diagramPanelWidth;
 	return {
 		...DEFAULT_PREFS,
 		...rest,

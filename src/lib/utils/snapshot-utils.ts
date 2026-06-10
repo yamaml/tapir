@@ -15,6 +15,7 @@ export function computeContentHash(project: TapirProject): string {
 	const content = JSON.stringify({
 		id: project.id,
 		name: project.name,
+		description: project.description ?? '',
 		flavor: project.flavor,
 		base: project.base,
 		namespaces: project.namespaces,
