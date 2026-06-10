@@ -24,11 +24,12 @@
  * @module utils/validation
  */
 
-import type { TapirProject, Description, Statement, Flavor } from '$lib/types';
+import type { TapirProject, Description, Statement, Flavor, SimpleDspLang } from '$lib/types';
 import type { ParseMessage } from '$lib/types/export';
 import { getFlavorLabels } from '$lib/types';
 import { STANDARD_PREFIXES } from '$lib/converters/simpledsp-generator';
 import { validateStatementVocab, type VocabLookup } from './vocab-validation';
+import { getValidationMessages } from './validation-messages';
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -156,6 +157,8 @@ export function validateField(
  * @param namespaces - Known namespace map.
  * @param descriptionNames - All description names (for shape-ref validation).
  * @param flavor - Profile flavor (selects DCTAP rules + label terminology).
+ * @param vocabContext - Optional Tier-2 vocabulary lookup context.
+ * @param lang - Message language (SimpleDSP only; defaults to English).
  * @returns Validation result.
  */
 export function validateStatement(
@@ -164,24 +167,26 @@ export function validateStatement(
 	namespaces: Record<string, string>,
 	descriptionNames: Set<string>,
 	flavor: Flavor = 'simpledsp',
-	vocabContext?: { desc: Description; vocabs: VocabLookup }
+	vocabContext?: { desc: Description; vocabs: VocabLookup },
+	lang: SimpleDspLang = 'en'
 ): ValidationResult {
 	const errors: ParseMessage[] = [];
 	const warnings: ParseMessage[] = [];
 	const labels = getFlavorLabels(flavor);
+	const msg = getValidationMessages(flavor === 'simpledsp' ? lang : 'en');
 	const stmtTerm = labels.statementSingular;
 	const descTerm = labels.descriptionSingular.toLowerCase();
 	const fieldKey = `${descName}.${stmt.label || stmt.propertyId || '(unnamed)'}`;
 
 	// 2. Namespace rules: propertyId, datatype, classConstraint, inScheme
 	if (!stmt.propertyId) {
-		warnings.push({ field: fieldKey, message: `${stmtTerm} has no property ID` });
+		warnings.push({ field: fieldKey, message: msg.noPropertyId(stmtTerm) });
 	} else {
 		const prefix = extractPrefix(stmt.propertyId);
 		if (prefix && !isPrefixKnown(prefix, namespaces)) {
 			errors.push({
 				field: fieldKey,
-				message: `Unknown prefix "${prefix}" in property "${stmt.propertyId}"`,
+				message: msg.unknownPrefix('property', prefix, stmt.propertyId),
 			});
 		}
 	}
@@ -191,7 +196,7 @@ export function validateStatement(
 		if (prefix && !isPrefixKnown(prefix, namespaces)) {
 			errors.push({
 				field: fieldKey,
-				message: `Unknown prefix "${prefix}" in datatype "${dt}"`,
+				message: msg.unknownPrefix('datatype', prefix, dt),
 			});
 		}
 	}
@@ -201,7 +206,7 @@ export function validateStatement(
 		if (prefix && !isPrefixKnown(prefix, namespaces)) {
 			errors.push({
 				field: fieldKey,
-				message: `Unknown prefix "${prefix}" in class constraint "${cls}"`,
+				message: msg.unknownPrefix('class constraint', prefix, cls),
 			});
 		}
 	}
@@ -211,7 +216,7 @@ export function validateStatement(
 		if (prefix && !isPrefixKnown(prefix, namespaces)) {
 			errors.push({
 				field: fieldKey,
-				message: `Unknown prefix "${prefix}" in inScheme "${scheme}"`,
+				message: msg.unknownPrefix('inScheme', prefix, scheme),
 			});
 		}
 	}
@@ -220,14 +225,14 @@ export function validateStatement(
 	if (stmt.min != null && stmt.max != null && stmt.min > stmt.max) {
 		errors.push({
 			field: fieldKey,
-			message: `Invalid cardinality: min (${stmt.min}) > max (${stmt.max})`,
+			message: msg.invalidCardinality(stmt.min, stmt.max),
 		});
 	}
 	if (stmt.min != null && stmt.min < 0) {
-		errors.push({ field: fieldKey, message: `Min must be >= 0 (got ${stmt.min})` });
+		errors.push({ field: fieldKey, message: msg.minNegative(stmt.min) });
 	}
 	if (stmt.max != null && stmt.max < 0) {
-		errors.push({ field: fieldKey, message: `Max must be >= 0 (got ${stmt.max})` });
+		errors.push({ field: fieldKey, message: msg.maxNegative(stmt.max) });
 	}
 
 	// 4. Shape references resolve (each ref in the list must resolve)
@@ -236,7 +241,7 @@ export function validateStatement(
 		if (!descriptionNames.has(ref)) {
 			errors.push({
 				field: fieldKey,
-				message: `Reference "${ref}" does not match any ${descTerm}`,
+				message: msg.unresolvedRef(ref, descTerm),
 			});
 		}
 	}
@@ -246,19 +251,19 @@ export function validateStatement(
 	if (stmt.valueType === 'literal' && hasAnyShapeRef) {
 		warnings.push({
 			field: fieldKey,
-			message: `Literal ${stmtTerm.toLowerCase()} should not carry a ${descTerm} reference`,
+			message: msg.literalWithRef(stmtTerm, descTerm),
 		});
 	}
 	if (stmt.valueType === 'iri' && stmt.datatype.length > 0) {
 		warnings.push({
 			field: fieldKey,
-			message: `IRI ${stmtTerm.toLowerCase()} should not carry a datatype`,
+			message: msg.iriWithDatatype(stmtTerm),
 		});
 	}
 	if (hasAnyShapeRef && stmt.classConstraint && stmt.classConstraint.length > 0) {
 		warnings.push({
 			field: fieldKey,
-			message: `${stmtTerm} has both a ${descTerm} reference and a class constraint`,
+			message: msg.refAndClass(stmtTerm, descTerm),
 		});
 	}
 
@@ -272,7 +277,7 @@ export function validateStatement(
 		if (hasConstraint && !stmt.valueType) {
 			warnings.push({
 				field: fieldKey,
-				message: `DCTAP statement with a constraint should declare a valueNodeType`,
+				message: msg.dctapConstraintNeedsNodeType(),
 			});
 		}
 	}
@@ -298,6 +303,8 @@ export function validateStatement(
  * catalogue.
  *
  * @param project - The project to validate.
+ * @param vocabs - Optional Tier-2 vocabulary lookup.
+ * @param lang - Message language (SimpleDSP only; defaults to English).
  * @returns Validation result with all errors and warnings.
  *
  * @example
@@ -309,11 +316,13 @@ export function validateStatement(
 export function validateProject(
 	project: TapirProject,
 	vocabs?: VocabLookup,
+	lang: SimpleDspLang = 'en',
 ): ValidationResult {
 	const errors: ParseMessage[] = [];
 	const warnings: ParseMessage[] = [];
 	const flavor: Flavor = project.flavor ?? 'simpledsp';
 	const labels = getFlavorLabels(flavor);
+	const msg = getValidationMessages(flavor === 'simpledsp' ? lang : 'en');
 	const descTerm = labels.descriptionSingular;
 	const descriptions = project.descriptions ?? [];
 	const descriptionNames = new Set(descriptions.map((d) => d.name));
@@ -322,27 +331,27 @@ export function validateProject(
 	if (descriptions.length === 0) {
 		warnings.push({
 			field: '(project)',
-			message: `Profile has no ${labels.descriptionPlural.toLowerCase()}`,
+			message: msg.profileEmpty(labels.descriptionPlural.toLowerCase()),
 		});
 	}
 
 	if (flavor === 'simpledsp' && descriptions.length > 0 && descriptions[0].name !== 'MAIN') {
 		errors.push({
 			field: descriptions[0].name || '(first)',
-			message: `SimpleDSP profile must open with a [MAIN] block (first ${descTerm.toLowerCase()} is "${descriptions[0].name}")`,
+			message: msg.mainFirst(descTerm.toLowerCase(), descriptions[0].name),
 		});
 	}
 
 	const namesSeen = new Set<string>();
 	for (const desc of descriptions) {
 		if (!desc.name) {
-			errors.push({ field: '(unnamed)', message: `${descTerm} has no name` });
+			errors.push({ field: '(unnamed)', message: msg.descNoName(descTerm) });
 			continue;
 		}
 		if (namesSeen.has(desc.name)) {
 			errors.push({
 				field: desc.name,
-				message: `Duplicate ${descTerm.toLowerCase()} name "${desc.name}"`,
+				message: msg.duplicateDescName(descTerm.toLowerCase(), desc.name),
 			});
 		}
 		namesSeen.add(desc.name);
@@ -354,7 +363,7 @@ export function validateProject(
 		if (desc.statements.length === 0) {
 			warnings.push({
 				field: desc.name,
-				message: `${descTerm} "${desc.name}" has no statements`,
+				message: msg.descNoStatements(descTerm, desc.name),
 			});
 		}
 
@@ -365,7 +374,7 @@ export function validateProject(
 			if (prefix && !isPrefixKnown(prefix, project.namespaces)) {
 				errors.push({
 					field: desc.name,
-					message: `Unknown prefix "${prefix}" in target class "${desc.targetClass}"`,
+					message: msg.unknownPrefix('target class', prefix, desc.targetClass),
 				});
 			}
 		}
@@ -376,13 +385,13 @@ export function validateProject(
 			if (!allNs[desc.idPrefix]) {
 				errors.push({
 					field: desc.name,
-					message: `ID prefix "${desc.idPrefix}" is not declared in namespaces`,
+					message: msg.idPrefixUndeclared(desc.idPrefix),
 				});
 			}
 			if (!desc.targetClass) {
 				warnings.push({
 					field: desc.name,
-					message: `${descTerm} "${desc.name}" declares an ID prefix but has no target class`,
+					message: msg.idPrefixNoTargetClass(descTerm, desc.name),
 				});
 			}
 		}
@@ -399,6 +408,7 @@ export function validateProject(
 				descriptionNames,
 				flavor,
 				vocabContext,
+				lang,
 			);
 			errors.push(...result.errors);
 			warnings.push(...result.warnings);

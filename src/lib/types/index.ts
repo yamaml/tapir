@@ -5,5 +5,6 @@
 
 export * from './profile';
 export * from './flavor';
+export * from './editor-strings';
 export * from './vocab';
 export * from './export';

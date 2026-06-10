@@ -1,8 +1,9 @@
 <script lang="ts">
 	import type { TapirProject } from '$lib/types';
+	import { getFlavorLabels } from '$lib/types';
 	import { validateProject } from '$lib/utils/validation';
 	import { getCachedVocab } from '$lib/vocab/vocab-loader';
-	import { selectedDescriptionId } from '$lib/stores';
+	import { selectedDescriptionId, simpleDspLang } from '$lib/stores';
 	import { Badge } from '$lib/components/ui/badge';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import CircleAlert from 'lucide-svelte/icons/circle-alert';
@@ -22,8 +23,15 @@
 	 * Intentional design choice: we do **not** hard-code rule codes in
 	 * the validator's emission path. Tying tooltips to message prefixes
 	 * keeps the validator small and lets us evolve copy here.
+	 *
+	 * Tooltip copy is flavor-aware: the shape/template terms come from
+	 * the active flavor labels, so SimpleDSP never reads "shape". In
+	 * SimpleDSP JP mode the validator emits Japanese messages, which
+	 * deliberately match none of these English prefixes — the rows show
+	 * without tooltips rather than mixing languages.
 	 */
 	function ruleHelp(message: string): string | undefined {
+		const descTerm = labels.descriptionSingular.toLowerCase();
 		if (message.startsWith('Unknown prefix ')) {
 			return 'The prefix used in this term is not declared in the project namespaces. Add it via the undeclared-prefixes banner or the Namespaces panel.';
 		}
@@ -37,10 +45,10 @@
 			return 'Cardinality must be a non-negative integer. Leave Max blank for "unbounded".';
 		}
 		if (message.includes('does not match any')) {
-			return 'The referenced shape name is not defined in this profile. Add a description template with that name, or correct the reference.';
+			return `The referenced name is not defined in this profile. Add a ${descTerm} with that name, or correct the reference.`;
 		}
 		if (message.includes('declares an ID prefix but has no target class')) {
-			return 'An ID prefix only makes sense alongside a target class — together they define the URI shape of records.';
+			return 'An ID prefix only makes sense alongside a target class — together they define the URI pattern of records.';
 		}
 		if (message.includes('ID prefix') && message.includes('is not declared')) {
 			return 'The ID prefix needs a matching namespace declaration so the converters can expand record URIs.';
@@ -52,25 +60,25 @@
 			return 'IRI references identify entities, not literal values, so a datatype constraint has no meaning here.';
 		}
 		if (message.includes('should not carry a') && message.includes('reference')) {
-			return 'Literal values cannot reference shape templates. Switch the value type to a structured/IRI form, or drop the reference.';
+			return `Literal values cannot reference a ${descTerm}. Switch the value type to a structured/IRI form, or drop the reference.`;
 		}
 		if (message.includes('both a') && message.includes('reference and a class constraint')) {
-			return 'Pick one: a shape reference constrains the value to a defined template; a class constraint requires only class membership. Both together is ambiguous.';
+			return `Pick one: a ${descTerm} reference constrains the value to a defined template; a class constraint requires only class membership. Both together is ambiguous.`;
 		}
 		if (message.includes('DCTAP statement with a constraint should declare a valueNodeType')) {
 			return 'When a constraint is given, the value node type tells consumers how to interpret it (literal vs IRI vs bnode).';
 		}
 		if (message.includes('has no statements')) {
-			return 'A shape with no statements imposes no constraints — usually a sign of an unfinished template. Add at least one statement, or delete the shape.';
+			return `A ${descTerm} with no statements imposes no constraints — usually a sign of an unfinished template. Add at least one statement, or delete it.`;
 		}
 		if (message.includes('has no property ID')) {
 			return 'Every statement must constrain a specific RDF property. Set the propertyID field.';
 		}
 		if (message.includes('has no name')) {
-			return 'Every shape needs an identifier so other statements can reference it.';
+			return `Every ${descTerm} needs an identifier so other statements can reference it.`;
 		}
 		if (message.includes('Profile has no')) {
-			return 'A profile must have at least one description template to be meaningful.';
+			return `A profile must have at least one ${descTerm} to be meaningful.`;
 		}
 		if (message.includes('SimpleDSP profile must open with a [MAIN] block')) {
 			return 'SimpleDSP requires the first block to be named [MAIN] — it is the entry point for records.';
@@ -95,12 +103,15 @@
 
 	let { project, open = $bindable(), onclose }: Props = $props();
 
+	let labels = $derived(getFlavorLabels(project.flavor, $simpleDspLang));
+
 	// Pass the cached-vocab lookup so the panel surfaces Tier-2
 	// property-range / property-domain coherence warnings alongside
 	// the existing syntactic checks. The lookup is read-only and
 	// silently returns undefined for prefixes whose chunk hasn't
 	// loaded yet, so unknown vocabs produce zero false positives.
-	let result = $derived(validateProject(project, { getCachedVocab }));
+	// The active SimpleDSP language selects the message catalogue.
+	let result = $derived(validateProject(project, { getCachedVocab }, $simpleDspLang));
 	let errorCount = $derived(result.errors.length);
 	let warningCount = $derived(result.warnings.length);
 	let isClean = $derived(errorCount === 0 && warningCount === 0);
