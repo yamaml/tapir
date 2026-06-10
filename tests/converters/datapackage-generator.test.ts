@@ -346,6 +346,103 @@ describe('buildDataPackageObject', () => {
 		const pkg = buildDataPackageObject(project);
 		expect(pkg.resources[0].schema.fields[0].name).toBe('myField');
 	});
+
+	it('pushes warning when statement has multiple datatypes', () => {
+		const project = makeProject();
+		project.descriptions = [
+			createDescription({
+				name: 'item_data',
+				statements: [
+					createStatement({
+						propertyId: 'ex:value',
+						datatype: ['xsd:string', 'xsd:integer', 'xsd:boolean'],
+					}),
+				],
+			}),
+		];
+		const warnings: any[] = [];
+		const pkg = buildDataPackageObject(project, warnings);
+
+		// Only the first datatype is emitted
+		expect(pkg.resources[0].schema.fields[0].type).toBe('string');
+
+		// Warning includes the truncation message
+		expect(warnings).toHaveLength(1);
+		expect(warnings[0].message).toContain('Frictionless allows one type per field');
+		expect(warnings[0].message).toContain('ex:value');
+		expect(warnings[0].message).toContain('xsd:string');
+		expect(warnings[0].message).toContain('xsd:integer');
+		expect(warnings[0].message).toContain('xsd:boolean');
+	});
+
+	it('does not push warning for single datatype', () => {
+		const project = makeProject();
+		project.descriptions = [
+			createDescription({
+				name: 'item_data',
+				statements: [
+					createStatement({
+						propertyId: 'ex:value',
+						datatype: ['xsd:string'],
+					}),
+				],
+			}),
+		];
+		const warnings: any[] = [];
+		buildDataPackageObject(project, warnings);
+
+		expect(warnings).toHaveLength(0);
+	});
+
+	it('pushes warning when resource name is normalised', () => {
+		const project = makeProject();
+		project.descriptions = [
+			createDescription({
+				name: 'MAIN',
+				statements: [],
+			}),
+		];
+		const warnings: any[] = [];
+		const pkg = buildDataPackageObject(project, warnings);
+
+		expect(pkg.resources[0].name).toBe('main');
+		expect(warnings).toHaveLength(1);
+		expect(warnings[0].message).toContain('Resource name "MAIN" was normalised to "main"');
+		expect(warnings[0].message).toContain('Frictionless names allow lowercase alphanumerics plus ._-');
+	});
+
+	it('pushes warning when resource name with CJK characters is normalised', () => {
+		const project = makeProject();
+		project.descriptions = [
+			createDescription({
+				name: '著作',
+				statements: [],
+			}),
+		];
+		const warnings: any[] = [];
+		const pkg = buildDataPackageObject(project, warnings);
+
+		// CJK characters are replaced with hyphens and then stripped,
+		// falling back to 'resource'
+		expect(pkg.resources[0].name).toBe('resource');
+		expect(warnings).toHaveLength(1);
+		expect(warnings[0].message).toContain('Resource name "著作" was normalised to "resource"');
+		expect(warnings[0].message).toContain('Frictionless names allow lowercase alphanumerics plus ._-');
+	});
+
+	it('does not push warning for conforming resource name', () => {
+		const project = makeProject();
+		project.descriptions = [
+			createDescription({
+				name: 'person_data-v2',
+				statements: [],
+			}),
+		];
+		const warnings: any[] = [];
+		buildDataPackageObject(project, warnings);
+
+		expect(warnings).toHaveLength(0);
+	});
 });
 
 // ── buildDataPackage (JSON string) ──────────────────────────────
