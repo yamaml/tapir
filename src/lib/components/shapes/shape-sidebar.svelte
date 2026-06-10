@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { selectedDescriptionId, addDescription, reorderDescriptions, simpleDspLang } from '$lib/stores';
-	import { getFlavorLabels } from '$lib/types';
+	import { getFlavorLabels, getEditorStrings } from '$lib/types';
 	import type { TapirProject } from '$lib/types';
 	import { Button } from '$lib/components/ui/button';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
@@ -25,6 +25,7 @@
 	);
 
 	let labels = $derived(getFlavorLabels(project.flavor, $simpleDspLang));
+	let ui = $derived(getEditorStrings(project.flavor, $simpleDspLang));
 
 	// ── Drag and drop ───────────────────────────────────────────
 	const drag = createDragHandlers((from, to) => {
@@ -51,7 +52,7 @@
 		</span>
 		<Button variant="ghost" size="sm" class="h-6 px-1.5 text-xs text-primary hover:text-primary" onclick={handleAdd}>
 			<Plus class="h-3.5 w-3.5 mr-0.5" />
-			Add
+			{ui.addButton}
 		</Button>
 	</div>
 
@@ -60,7 +61,7 @@
 		<div class="p-1.5 space-y-0.5">
 			{#if filteredDescriptions.length === 0}
 				<p class="px-2 py-4 text-center text-xs text-muted-foreground">
-					{searchQuery ? 'No matches' : `No ${labels.descriptionPlural.toLowerCase()} yet`}
+					{searchQuery ? ui.sidebarNoMatches : ui.noDescriptionsYet}
 				</p>
 			{:else}
 				{#each filteredDescriptions as desc, index (desc.id)}

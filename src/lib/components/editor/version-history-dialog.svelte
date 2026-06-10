@@ -1,7 +1,7 @@
 <!-- version-history-dialog.svelte -->
 <script lang="ts">
 	import type { TapirProject, ProjectSnapshot } from '$lib/types';
-	import { getSnapshots, saveSnapshot, deleteSnapshot, updateSnapshotLabel, pruneAutoSnapshots } from '$lib/db';
+	import { getSnapshots, saveSnapshot, deleteSnapshot, updateSnapshotLabel, pruneAutoSnapshots, migrateLegacyDatatype } from '$lib/db';
 	import { currentProject } from '$lib/stores';
 	import { clearHistory } from '$lib/stores/history-store';
 	import { computeSummaryDiff, formatDiffSummary, computeContentHash } from '$lib/utils/snapshot-utils';
@@ -33,6 +33,7 @@
 	let editingId = $state<number | null>(null);
 	let editLabel = $state('');
 	let confirmRestoreId = $state<number | null>(null);
+	let confirmDeleteId = $state<number | null>(null);
 	let loading = $state(false);
 
 	// Load snapshots when dialog opens
@@ -76,8 +77,16 @@
 		});
 		await pruneAutoSnapshots(project.id);
 
-		// Restore
-		const restored = { ...snapshot.data, updatedAt: new Date().toISOString() };
+		// Restore. Snapshot data must pass through the same legacy
+		// migration as loadProject — snapshots taken before the
+		// multi-datatype change still carry `datatype` as a string and
+		// would crash code expecting `string[]` (and autosave would then
+		// persist the unmigrated shape back). The JSON round-trip also
+		// detaches the restored object from the snapshot list state.
+		const restored = migrateLegacyDatatype({
+			...(JSON.parse(JSON.stringify(snapshot.data)) as TapirProject),
+			updatedAt: new Date().toISOString(),
+		});
 		currentProject.set(restored);
 		clearHistory();
 		confirmRestoreId = null;
@@ -86,6 +95,7 @@
 	}
 
 	async function handleDelete(id: number) {
+		confirmDeleteId = null;
 		await deleteSnapshot(id);
 		await loadSnapshots();
 	}
@@ -161,6 +171,7 @@
 					<p class="text-sm text-muted-foreground text-center py-6">No versions saved yet</p>
 				{:else}
 					{#each snapshots as snapshot, i (snapshot.id)}
+						{@const confirming = confirmRestoreId === snapshot.id || confirmDeleteId === snapshot.id}
 						<div class="rounded-md border border-border p-2.5 hover:bg-muted/50 transition-colors">
 							<div class="flex items-start justify-between gap-2">
 								<div class="min-w-0 flex-1">
@@ -221,13 +232,19 @@
 											<Button size="sm" class="h-5 px-1.5 text-[10px]" onclick={() => handleRestore(snapshot)}>Yes</Button>
 											<Button size="sm" variant="ghost" class="h-5 px-1.5 text-[10px]" onclick={() => (confirmRestoreId = null)}>No</Button>
 										</div>
+									{:else if confirmDeleteId === snapshot.id}
+										<div class="flex items-center gap-1 text-[10px]">
+											<span class="text-muted-foreground">Delete?</span>
+											<Button size="sm" variant="destructive" class="h-5 px-1.5 text-[10px]" onclick={() => { if (snapshot.id != null) handleDelete(snapshot.id); }}>Yes</Button>
+											<Button size="sm" variant="ghost" class="h-5 px-1.5 text-[10px]" onclick={() => (confirmDeleteId = null)}>No</Button>
+										</div>
 									{/if}
 									<Tip text="Restore this version">
 										<Button
 											variant="ghost"
 											size="icon"
-											class="h-6 w-6 text-muted-foreground hover:text-foreground {confirmRestoreId === snapshot.id ? 'hidden' : ''}"
-											onclick={() => (confirmRestoreId = snapshot.id ?? null)}
+											class="h-6 w-6 text-muted-foreground hover:text-foreground {confirming ? 'hidden' : ''}"
+											onclick={() => { confirmDeleteId = null; confirmRestoreId = snapshot.id ?? null; }}
 										>
 											<RotateCcw class="h-3 w-3" />
 										</Button>
@@ -236,8 +253,8 @@
 										<Button
 											variant="ghost"
 											size="icon"
-											class="h-6 w-6 text-muted-foreground hover:text-destructive {confirmRestoreId === snapshot.id ? 'hidden' : ''}"
-											onclick={() => { if (snapshot.id != null) handleDelete(snapshot.id); }}
+											class="h-6 w-6 text-muted-foreground hover:text-destructive {confirming ? 'hidden' : ''}"
+											onclick={() => { confirmRestoreId = null; confirmDeleteId = snapshot.id ?? null; }}
 										>
 											<Trash2 class="h-3 w-3" />
 										</Button>
