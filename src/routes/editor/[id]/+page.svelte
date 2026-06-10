@@ -7,9 +7,10 @@
 	import { currentProject, selectedDescriptionId, editorMode, diagramVisible, refreshProjectsList, simpleDspLang, diagramSettings } from '$lib/stores';
 	import { computeContentHash } from '$lib/utils/snapshot-utils';
 	import { descriptionMatchesQuery, countStatementMatches } from '$lib/utils/search-match';
-	import { undo, redo } from '$lib/stores/history-store';
+	import { undo, redo, clearHistory } from '$lib/stores/history-store';
+	import { untrack } from 'svelte';
 	// Vocab loading is now lazy — triggered by autocomplete when user types a prefix
-	import { getFlavorLabels } from '$lib/types';
+	import { getFlavorLabels, getEditorStrings } from '$lib/types';
 	import type { TapirProject } from '$lib/types';
 	import type { EditorMode } from '$lib/stores';
 	import { Button } from '$lib/components/ui/button';
@@ -50,10 +51,13 @@
 	let searchVisible = $state(false);
 	let searchInput: HTMLInputElement | undefined = $state();
 	let handleVisibilityChange: (() => void) | undefined;
+	let handleBeforeUnload: ((e: BeforeUnloadEvent) => void) | undefined;
+	let handlePageHide: (() => void) | undefined;
 	let idleTimer: ReturnType<typeof setTimeout> | undefined;
 	const IDLE_SNAPSHOT_DELAY = 5 * 60 * 1000; // 5 minutes
 
 	let labels = $derived(project ? getFlavorLabels(project.flavor, $simpleDspLang) : null);
+	let ui = $derived(project ? getEditorStrings(project.flavor, $simpleDspLang) : null);
 	let selectedDesc = $derived(
 		project?.descriptions.find((d) => d.id === $selectedDescriptionId) ?? null
 	);
@@ -73,27 +77,47 @@
 		lastPlainProject = plain;
 		savingInProgress = true;
 
+		// Change detection runs synchronously so Ctrl+S, the Save button,
+		// and the visibilitychange/beforeunload guards see the unsaved
+		// state immediately — not only after the 800 ms debounce fires.
+		const currentHash = computeContentHash(plain);
+		if (lastSnapshotHash && currentHash !== lastSnapshotHash) {
+			hasUnsavedChanges = true;
+		}
+
+		// Reset idle timer for auto-snapshot
+		if (idleTimer) clearTimeout(idleTimer);
+		if (hasUnsavedChanges) {
+			idleTimer = setTimeout(() => createAutoSnapshot(plain), IDLE_SNAPSHOT_DELAY);
+		}
+
 		if (saveTimer) clearTimeout(saveTimer);
 		saveTimer = setTimeout(async () => {
+			saveTimer = undefined;
 			try {
 				await saveProject(plain);
 			} catch {
 				// silent — IndexedDB writes rarely fail
 			}
 			savingInProgress = false;
-
-			// Change detection: compare semantic content hash
-			const currentHash = computeContentHash(plain);
-			if (lastSnapshotHash && currentHash !== lastSnapshotHash) {
-				hasUnsavedChanges = true;
-			}
-
-			// Reset idle timer for auto-snapshot
-			if (idleTimer) clearTimeout(idleTimer);
-			if (hasUnsavedChanges) {
-				idleTimer = setTimeout(() => createAutoSnapshot(plain), IDLE_SNAPSHOT_DELAY);
-			}
 		}, 800);
+	}
+
+	/**
+	 * Flushes a pending debounced save immediately (best-effort).
+	 * Used by the beforeunload/pagehide handlers so closing the tab
+	 * within the 800 ms debounce window cannot drop the last edits.
+	 */
+	function flushPendingSave(): void {
+		if (!saveTimer) return;
+		clearTimeout(saveTimer);
+		saveTimer = undefined;
+		if (lastPlainProject) {
+			// Fire-and-forget: IndexedDB writes usually complete even
+			// during teardown; beforeunload additionally warns the user.
+			void saveProject(lastPlainProject);
+		}
+		savingInProgress = false;
 	}
 
 	async function createAutoSnapshot(plain: TapirProject): Promise<void> {
@@ -158,12 +182,18 @@
 	});
 
 	onMount(async () => {
-		// Hydrate the SimpleDSP language + diagram settings from
-		// persisted prefs so the user's last choices carry across
-		// sessions.
+		// Fresh undo/redo stacks per project session — stale entries
+		// from a previously opened project must never leak in.
+		clearHistory();
+
+		// Hydrate the SimpleDSP language, editor mode, and diagram
+		// settings from persisted prefs so the user's last choices
+		// carry across sessions.
 		try {
 			const prefs = await loadPrefs();
 			simpleDspLang.set(prefs.simpleDspLang);
+			modeValue = prefs.editorMode;
+			editorMode.set(prefs.editorMode);
 			diagramSettings.set({
 				style: prefs.diagramStyle,
 				palette: prefs.diagramPalette,
@@ -221,6 +251,21 @@
 			}
 		};
 		document.addEventListener('visibilitychange', handleVisibilityChange);
+
+		// Tab close / navigation away: flush the pending debounced save
+		// and warn only while a write is genuinely in flight (the flush
+		// is asynchronous and may not complete during teardown).
+		handleBeforeUnload = (e: BeforeUnloadEvent) => {
+			if (saveTimer) {
+				flushPendingSave();
+				e.preventDefault();
+			}
+		};
+		handlePageHide = () => {
+			flushPendingSave();
+		};
+		window.addEventListener('beforeunload', handleBeforeUnload);
+		window.addEventListener('pagehide', handlePageHide);
 	});
 
 	onDestroy(() => {
@@ -238,17 +283,20 @@
 		if (handleVisibilityChange) {
 			document.removeEventListener('visibilitychange', handleVisibilityChange);
 		}
+		if (handleBeforeUnload) {
+			window.removeEventListener('beforeunload', handleBeforeUnload);
+		}
+		if (handlePageHide) {
+			window.removeEventListener('pagehide', handlePageHide);
+		}
 
 		// Flush any pending save using the plain snapshot
-		if (saveTimer) {
-			clearTimeout(saveTimer);
-			if (lastPlainProject) {
-				saveProject(lastPlainProject);
-			}
-		}
+		flushPendingSave();
 		unsubscribe();
 		// Refresh dashboard list so navigating back shows latest data
 		refreshProjectsList();
+		// Drop this project's undo/redo history along with the project
+		clearHistory();
 		currentProject.set(null);
 		selectedDescriptionId.set(null);
 	});
@@ -280,6 +328,12 @@
 		if (value) {
 			modeValue = value;
 			editorMode.set(value as EditorMode);
+			// Persist so the editor reopens in the user's last mode.
+			loadPrefs()
+				.then((prefs) => savePrefs({ ...prefs, editorMode: value as EditorMode }))
+				.catch(() => {
+					// silent — in-memory state already switched
+				});
 		}
 	}
 
@@ -302,6 +356,13 @@
 
 	$effect(() => {
 		if (!searchQuery || !project) return;
+		// Keep the current selection when it also matches the query —
+		// jumping to the first match would discard the user's context.
+		// `untrack` keeps the selection itself out of the dependency set
+		// so a manual selection never re-triggers the auto-jump.
+		const currentId = untrack(() => $selectedDescriptionId);
+		const current = project.descriptions.find((d) => d.id === currentId);
+		if (current && descriptionMatchesQuery(current, searchQuery)) return;
 		const match = project.descriptions.find((d) => descriptionMatchesQuery(d, searchQuery));
 		if (match) selectedDescriptionId.set(match.id);
 	});
@@ -541,18 +602,18 @@
 								<SmartTableEditor description={selectedDesc} flavor={project.flavor} {searchQuery} />
 							{/if}
 						</div>
-					{:else}
+					{:else if ui}
 						<div class="flex h-full flex-col items-center justify-center gap-2">
 							{#if project.descriptions.length === 0}
 								<p class="text-sm text-muted-foreground">
-									No {labels.descriptionPlural.toLowerCase()} yet
+									{ui.noDescriptionsYet}
 								</p>
 								<p class="text-xs text-muted-foreground/70">
-									Click <strong>Add</strong> in the sidebar to create your first {labels.descriptionSingular.toLowerCase()}
+									{ui.addFirstDescriptionHint}
 								</p>
 							{:else}
 								<p class="text-sm text-muted-foreground">
-									Select a {labels.descriptionSingular.toLowerCase()} from the sidebar
+									{ui.selectDescriptionHint}
 								</p>
 							{/if}
 						</div>
