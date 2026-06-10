@@ -2,13 +2,11 @@
 	import type { Description, Flavor, Statement } from '$lib/types';
 	import { getFlavorLabels, getEditorStrings } from '$lib/types';
 	import { resolveSimpleDspConstraint } from '$lib/converters/simpledsp-generator';
+	import { displayValueType, commitCellEdit } from '$lib/utils/editor-cells';
 	import {
-		displayValueType,
-		parseValueTypeCell,
-		valueTypeSelectionUpdates,
-		parseSimpleDspConstraintCell,
-		parseDctapConstraintCell,
-	} from '$lib/utils/editor-cells';
+		buildSmartTableColumns,
+		type SmartTableColumn,
+	} from '$lib/utils/smart-table-columns';
 	import { focusOnMount } from '$lib/utils/focus-on-mount';
 	import { addStatement, removeStatement, updateStatement, duplicateStatement, assistanceEnabled, currentProject, simpleDspLang } from '$lib/stores';
 	import PropertyAutocomplete from '$lib/components/vocab/property-autocomplete.svelte';
@@ -101,75 +99,11 @@
 	// Track which row has the constraint popover open
 	let constraintPopoverRow = $state<string | null>(null);
 
-	// Column definitions based on flavor
-	interface ColumnDef {
-		key: string;
-		header: string;
-		/**
-		 * The Statement property this column reads/writes. `shapeRefs` is
-		 * displayed as space-separated in the cell and parsed back the
-		 * same way. `actions` is the row's delete/duplicate buttons.
-		 */
-		field: keyof Statement | 'actions';
-		width: string;
-		mono?: boolean;
-		/**
-		 * One-line explanation surfaced via the column header's help icon.
-		 * Mirrors the FieldLabel `help` content used in the Customized
-		 * editor — keep these in sync so the vocabulary is identical
-		 * across modes.
-		 */
-		help?: string;
-	}
+	// Column definitions based on flavor; the column model lives in
+	// utils/smart-table-columns so it stays pure and unit-testable.
+	let columns = $derived(buildSmartTableColumns(flavor, labels, ui));
 
-	let columns = $derived.by((): ColumnDef[] => {
-		if (flavor === 'dctap') {
-			return [
-				{ key: 'propertyID', header: labels.columns.property, field: 'propertyId', width: 'w-[120px]', mono: true,
-					help: 'The RDF property this statement constrains, written as a prefixed term (e.g. dcterms:title).' },
-				{ key: 'propertyLabel', header: labels.columns.name, field: 'label', width: 'w-[110px]',
-					help: 'Human-readable label for this statement. Not validated; surfaces in generated documentation.' },
-				{ key: 'mandatory', header: labels.columns.min, field: 'min', width: 'w-[70px]',
-					help: 'TRUE if the statement is required (min cardinality ≥ 1); FALSE if optional.' },
-				{ key: 'repeatable', header: labels.columns.max, field: 'max', width: 'w-[70px]',
-					help: 'TRUE if the value can appear multiple times; FALSE if at most one.' },
-				{ key: 'valueNodeType', header: labels.columns.valueType, field: 'valueType', width: 'w-[90px]',
-					help: 'Is the value an IRI, a literal (text/number/date), or a blank node? Determines which constraint fields are valid.' },
-				{ key: 'valueDataType', header: 'valueDataType', field: 'datatype', width: 'w-[100px]', mono: true,
-					help: 'XSD datatype the literal value must satisfy (e.g. xsd:string, xsd:date). Multiple chips express alternatives — any of them is acceptable.' },
-				{ key: 'constraintType', header: 'valueConstraintType', field: 'constraintType', width: 'w-[110px]',
-					help: 'How to interpret valueConstraint. picklist = pick from a list; pattern = regex; IRIstem = URI prefix; languageTag = language-tag list; min/maxLength/Inclusive = numeric facets.' },
-				{ key: 'valueConstraint', header: labels.columns.constraint, field: 'constraint', width: 'w-[110px]',
-					help: 'Additional restriction on the value, interpreted per valueConstraintType (picklist values, regex pattern, IRI stem, etc.).' },
-				{ key: 'valueShape', header: 'valueShape', field: 'shapeRefs', width: 'w-[100px]',
-					help: 'When the value is an IRI or blank node, the shape it must conform to. Multiple chips express alternatives (DCMI SRAP convention).' },
-				{ key: 'note', header: labels.columns.note, field: 'note', width: 'w-[120px]',
-					help: 'Free-text comment about this statement. Not validated.' },
-				{ key: 'actions', header: '', field: 'actions', width: 'w-[40px]' },
-			];
-		}
-		// SimpleDSP — help strings come from the centralized editor
-		// strings so the JP toggle localizes them (no-mixing rule).
-		return [
-			{ key: 'name', header: labels.columns.name, field: 'label', width: 'w-[120px]',
-				help: ui.columnHelp.name },
-			{ key: 'property', header: labels.columns.property, field: 'propertyId', width: 'w-[130px]', mono: true,
-				help: ui.columnHelp.property },
-			{ key: 'min', header: labels.columns.min, field: 'min', width: 'w-[55px]',
-				help: ui.columnHelp.min },
-			{ key: 'max', header: labels.columns.max, field: 'max', width: 'w-[55px]',
-				help: ui.columnHelp.max },
-			{ key: 'valueType', header: labels.columns.valueType, field: 'valueType', width: 'w-[90px]',
-				help: ui.columnHelp.valueType },
-			{ key: 'constraint', header: labels.columns.constraint, field: 'constraint', width: 'w-[130px]', mono: true,
-				help: ui.columnHelp.constraint },
-			{ key: 'note', header: labels.columns.note, field: 'note', width: 'w-[140px]',
-				help: ui.columnHelp.note },
-			{ key: 'actions', header: '', field: 'actions', width: 'w-[40px]' },
-		];
-	});
-
-	function getCellValue(stmt: Statement, col: ColumnDef): string {
+	function getCellValue(stmt: Statement, col: SmartTableColumn): string {
 		if (col.field === 'actions') return '';
 		if (col.field === 'min') {
 			if (flavor === 'dctap') {
@@ -241,7 +175,7 @@
 		return '';
 	}
 
-	function startEdit(rowIndex: number, colIndex: number, stmt: Statement, col: ColumnDef) {
+	function startEdit(rowIndex: number, colIndex: number, stmt: Statement, col: SmartTableColumn) {
 		if (col.field === 'actions') return;
 		// In SimpleDSP + assistance, constraint opens a popover instead of inline edit
 		if ($assistanceEnabled && col.field === 'constraint' && flavor === 'simpledsp') {
@@ -254,96 +188,34 @@
 		originalValue = editValue;
 	}
 
-	function commitEdit(stmt: Statement, col: ColumnDef) {
+	function commitEdit(stmt: Statement, col: SmartTableColumn) {
 		if (!editingCell || col.field === 'actions') return;
 
-		const val = editValue;
+		// All per-field parsing (cardinality flags, localized value
+		// types, the composed constraint cells, the unchanged no-op)
+		// lives in utils/editor-cells so it stays unit-testable.
+		const { updates, openConstraintPopover } = commitCellEdit(
+			stmt,
+			col.field,
+			editValue,
+			originalValue,
+			flavor
+		);
 
-		// Unchanged → no-op. Without this, blurring a cell whose display
-		// is composed (localized value types, the Constraint column)
-		// would re-parse the display text and corrupt the source fields.
-		if (val === originalValue) {
-			editingCell = null;
-			return;
-		}
-
-		if (col.field === 'min') {
-			if (flavor === 'dctap') {
-				const upper = val.toUpperCase();
-				if (upper === 'TRUE') {
-					updateStatement(description.id, stmt.id, { min: 1 });
-				} else if (upper === 'FALSE') {
-					updateStatement(description.id, stmt.id, { min: 0 });
-				} else {
-					// Cleared → undefined (unset)
-					updateStatement(description.id, stmt.id, { min: undefined });
-				}
-			} else {
-				const n = val === '' ? undefined : parseInt(val, 10);
-				updateStatement(description.id, stmt.id, { min: n != null && Number.isNaN(n) ? undefined : n });
-			}
-		} else if (col.field === 'max') {
-			if (flavor === 'dctap') {
-				// Tri-state max: TRUE → null (explicitly unbounded),
-				// FALSE → 1, cleared → undefined (unset). Legacy stored
-				// null values keep meaning "unbounded" — no migration.
-				const upper = val.toUpperCase();
-				if (upper === 'TRUE') {
-					updateStatement(description.id, stmt.id, { max: null });
-				} else if (upper === 'FALSE') {
-					updateStatement(description.id, stmt.id, { max: 1 });
-				} else {
-					updateStatement(description.id, stmt.id, { max: undefined });
-				}
-			} else {
-				const n = val === '' ? undefined : parseInt(val, 10);
-				updateStatement(description.id, stmt.id, { max: n != null && Number.isNaN(n) ? undefined : n });
-			}
-		} else if (col.field === 'valueType') {
-			// Parse display strings (EN + localized JP labels) back to the
-			// internal value type via the shared mapping.
-			const parsed = parseValueTypeCell(val);
-			if (parsed === null) {
-				// Unrecognised input never wipes the stored value.
-				editingCell = null;
-				return;
-			}
-			updateStatement(description.id, stmt.id, valueTypeSelectionUpdates(parsed));
-			if (
-				parsed === 'structured' &&
-				flavor === 'simpledsp' &&
-				!(stmt.shapeRefs?.length || stmt.classConstraint?.length)
-			) {
-				// 'structured' is derived from refs; with none set yet the
-				// selection would otherwise display as empty. Open the
-				// constraint popover so the user can pick the target.
-				const rowIdx = description.statements.findIndex((s) => s.id === stmt.id);
-				if (rowIdx >= 0) constraintPopoverRow = `${rowIdx}`;
-			}
-		} else if (col.field === 'constraint') {
-			// Parse the composed display back with the same precedence the
-			// display used (see utils/editor-cells) so a constraint
-			// sourced from classConstraint/inScheme/values returns to its
-			// field instead of being dumped into `constraint`/`datatype`.
-			const updates = flavor === 'simpledsp'
-				? parseSimpleDspConstraintCell(val, stmt)
-				: parseDctapConstraintCell(val, stmt);
+		if (updates) {
 			updateStatement(description.id, stmt.id, updates);
-		} else if (col.field === 'datatype') {
-			// Free-text edit of valueDataType: split on whitespace so
-			// multi-datatype profiles (DCMI SRAP, SimpleDSP) survive a
-			// commit-and-reopen round-trip.
-			updateStatement(description.id, stmt.id, {
-				datatype: val.split(/\s+/).filter(Boolean),
-			});
-		} else {
-			updateStatement(description.id, stmt.id, { [col.field]: val });
+		}
+		if (openConstraintPopover) {
+			// 'structured' with no refs set yet: open the constraint
+			// popover so the user can pick the target.
+			const rowIdx = description.statements.findIndex((s) => s.id === stmt.id);
+			if (rowIdx >= 0) constraintPopoverRow = `${rowIdx}`;
 		}
 
 		editingCell = null;
 	}
 
-	function handleKeydown(e: KeyboardEvent, stmt: Statement, col: ColumnDef, rowIndex: number, colIndex: number) {
+	function handleKeydown(e: KeyboardEvent, stmt: Statement, col: SmartTableColumn, rowIndex: number, colIndex: number) {
 		if (e.key === 'Enter' || e.key === 'Escape') {
 			if (e.key === 'Enter') commitEdit(stmt, col);
 			editingCell = null;

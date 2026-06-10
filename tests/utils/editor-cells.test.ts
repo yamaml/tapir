@@ -5,6 +5,7 @@ import {
 	valueTypeSelectionUpdates,
 	parseSimpleDspConstraintCell,
 	parseDctapConstraintCell,
+	commitCellEdit,
 } from '$lib/utils/editor-cells';
 import { createStatement } from '$lib/types';
 import type { Statement } from '$lib/types';
@@ -212,5 +213,97 @@ describe('parseDctapConstraintCell', () => {
 	it('passes untyped constraints through verbatim', () => {
 		const updates = parseDctapConstraintCell('anything goes', stmt());
 		expect(updates).toEqual({ constraint: 'anything goes' });
+	});
+});
+
+// ── commitCellEdit ──────────────────────────────────────────────
+
+describe('commitCellEdit', () => {
+	it('is a no-op when the value is unchanged', () => {
+		const s = stmt({ valueType: 'literal', datatype: ['xsd:date'] });
+		const result = commitCellEdit(s, 'constraint', 'xsd:date', 'xsd:date', 'simpledsp');
+		expect(result.updates).toBeNull();
+		expect(result.openConstraintPopover).toBe(false);
+	});
+
+	it('is a no-op for unrecognised value-type input', () => {
+		const s = stmt({ valueType: 'literal' });
+		const result = commitCellEdit(s, 'valueType', 'typo', 'literal', 'simpledsp');
+		expect(result.updates).toBeNull();
+	});
+
+	// — SimpleDSP constraint cell routes —
+
+	it('routes a SimpleDSP #ref constraint to shapeRefs', () => {
+		const s = stmt({ valueType: '' });
+		const result = commitCellEdit(s, 'constraint', '#Agent', '', 'simpledsp');
+		expect(result.updates).toMatchObject({ shapeRefs: ['Agent'] });
+	});
+
+	it('routes a SimpleDSP literal-row constraint to datatype', () => {
+		const s = stmt({ valueType: 'literal' });
+		const result = commitCellEdit(s, 'constraint', 'xsd:date xsd:gYear', '', 'simpledsp');
+		expect(result.updates).toMatchObject({ datatype: ['xsd:date', 'xsd:gYear'] });
+	});
+
+	it('routes a SimpleDSP iri-row stem constraint to inScheme', () => {
+		const s = stmt({ valueType: 'iri' });
+		const result = commitCellEdit(s, 'constraint', 'dcterms:', '', 'simpledsp');
+		expect(result.updates).toMatchObject({ inScheme: ['dcterms:'], values: [] });
+	});
+
+	// — DCTAP cell routes —
+
+	it('maps DCTAP mandatory TRUE/FALSE/cleared to min', () => {
+		const s = stmt();
+		expect(commitCellEdit(s, 'min', 'TRUE', '', 'dctap').updates).toEqual({ min: 1 });
+		expect(commitCellEdit(s, 'min', 'FALSE', '', 'dctap').updates).toEqual({ min: 0 });
+		expect(commitCellEdit(s, 'min', '', 'TRUE', 'dctap').updates).toEqual({ min: undefined });
+	});
+
+	it('maps DCTAP repeatable TRUE/FALSE/cleared to tri-state max', () => {
+		const s = stmt();
+		expect(commitCellEdit(s, 'max', 'TRUE', '', 'dctap').updates).toEqual({ max: null });
+		expect(commitCellEdit(s, 'max', 'FALSE', '', 'dctap').updates).toEqual({ max: 1 });
+		expect(commitCellEdit(s, 'max', '', 'FALSE', 'dctap').updates).toEqual({ max: undefined });
+	});
+
+	it('routes the DCTAP constraint cell per constraintType', () => {
+		const s = stmt({ constraintType: 'picklist' });
+		const result = commitCellEdit(s, 'constraint', 'a,b', '', 'dctap');
+		expect(result.updates).toMatchObject({ values: ['a', 'b'] });
+	});
+
+	it('splits a DCTAP valueDataType edit on whitespace', () => {
+		const s = stmt();
+		const result = commitCellEdit(s, 'datatype', 'xsd:date  edtf:EDTF', '', 'dctap');
+		expect(result.updates).toEqual({ datatype: ['xsd:date', 'edtf:EDTF'] });
+	});
+
+	// — SimpleDSP numeric cardinality + structured popover —
+
+	it('parses SimpleDSP numeric min/max and unsets on empty', () => {
+		const s = stmt();
+		expect(commitCellEdit(s, 'min', '2', '', 'simpledsp').updates).toEqual({ min: 2 });
+		expect(commitCellEdit(s, 'max', '', '3', 'simpledsp').updates).toEqual({ max: undefined });
+	});
+
+	it('asks to open the constraint popover for structured with no refs yet', () => {
+		const s = stmt({ valueType: '', shapeRefs: [], classConstraint: [] });
+		const result = commitCellEdit(s, 'valueType', 'structured', '', 'simpledsp');
+		expect(result.openConstraintPopover).toBe(true);
+		expect(result.updates).toEqual({ valueType: '', datatype: [] });
+	});
+
+	it('does not open the popover when refs already exist', () => {
+		const s = stmt({ shapeRefs: ['Agent'] });
+		const result = commitCellEdit(s, 'valueType', 'structured', '', 'simpledsp');
+		expect(result.openConstraintPopover).toBe(false);
+	});
+
+	it('writes plain string fields directly', () => {
+		const s = stmt();
+		const result = commitCellEdit(s, 'note', 'a comment', '', 'simpledsp');
+		expect(result.updates).toEqual({ note: 'a comment' });
 	});
 });

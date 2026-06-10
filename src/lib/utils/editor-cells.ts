@@ -14,7 +14,7 @@
  * @module utils/editor-cells
  */
 
-import type { Statement, ValueType } from '$lib/types';
+import type { Flavor, Statement, ValueType } from '$lib/types';
 import { parseQuotedValues } from '$lib/converters/simpledsp-parser';
 
 // ── Value Type Display + Parsing ────────────────────────────────
@@ -230,4 +230,129 @@ export function parseDctapConstraintCell(
 		default:
 			return { constraint: t };
 	}
+}
+
+// ── Cell Commit Routing ─────────────────────────────────────────
+
+/** Outcome of committing a Smart Table cell edit. */
+export interface CellCommitResult {
+	/** Updates for `updateStatement`, or `null` when nothing changes. */
+	updates: Partial<Statement> | null;
+	/**
+	 * True when the SimpleDSP constraint popover should open: the user
+	 * selected `structured` but the statement has no shape refs or
+	 * class constraints yet, so the selection would otherwise display
+	 * as empty.
+	 */
+	openConstraintPopover: boolean;
+}
+
+/**
+ * Routes a committed Smart Table cell edit to Statement updates.
+ *
+ * Extracted from `smart-table-editor.svelte`'s `commitEdit` so the
+ * per-field parsing (cardinality flags, localized value types, the
+ * composed constraint cells) is pure and unit-testable. The component
+ * applies `updates` via `updateStatement` and opens the constraint
+ * popover when asked to.
+ *
+ * @param stmt - The statement being edited.
+ * @param field - The Statement field the cell maps to.
+ * @param value - The committed cell text.
+ * @param originalValue - The cell text at edit start. Commits with
+ *   `value === originalValue` are no-ops: blurring a cell whose
+ *   display is composed (localized value types, the Constraint
+ *   column) must never re-parse the display text and corrupt the
+ *   source fields.
+ * @param flavor - The active profile flavor.
+ * @returns The updates to apply (or `null`) plus the popover directive.
+ *
+ * @example
+ * commitCellEdit(stmt, 'min', 'TRUE', '', 'dctap');
+ * // => { updates: { min: 1 }, openConstraintPopover: false }
+ */
+export function commitCellEdit(
+	stmt: Statement,
+	field: keyof Statement,
+	value: string,
+	originalValue: string,
+	flavor: Flavor
+): CellCommitResult {
+	const noop: CellCommitResult = { updates: null, openConstraintPopover: false };
+	const commit = (updates: Partial<Statement>): CellCommitResult => ({
+		updates,
+		openConstraintPopover: false,
+	});
+
+	// Unchanged → no-op. Without this, blurring a cell whose display
+	// is composed (localized value types, the Constraint column)
+	// would re-parse the display text and corrupt the source fields.
+	if (value === originalValue) return noop;
+
+	if (field === 'min') {
+		if (flavor === 'dctap') {
+			const upper = value.toUpperCase();
+			if (upper === 'TRUE') return commit({ min: 1 });
+			if (upper === 'FALSE') return commit({ min: 0 });
+			// Cleared → undefined (unset)
+			return commit({ min: undefined });
+		}
+		const n = value === '' ? undefined : parseInt(value, 10);
+		return commit({ min: n != null && Number.isNaN(n) ? undefined : n });
+	}
+
+	if (field === 'max') {
+		if (flavor === 'dctap') {
+			// Tri-state max: TRUE → null (explicitly unbounded),
+			// FALSE → 1, cleared → undefined (unset). Legacy stored
+			// null values keep meaning "unbounded" — no migration.
+			const upper = value.toUpperCase();
+			if (upper === 'TRUE') return commit({ max: null });
+			if (upper === 'FALSE') return commit({ max: 1 });
+			return commit({ max: undefined });
+		}
+		const n = value === '' ? undefined : parseInt(value, 10);
+		return commit({ max: n != null && Number.isNaN(n) ? undefined : n });
+	}
+
+	if (field === 'valueType') {
+		// Parse display strings (EN + localized JP labels) back to the
+		// internal value type via the shared mapping.
+		const parsed = parseValueTypeCell(value);
+		if (parsed === null) {
+			// Unrecognised input never wipes the stored value.
+			return noop;
+		}
+		return {
+			updates: valueTypeSelectionUpdates(parsed),
+			// 'structured' is derived from refs; with none set yet the
+			// selection would otherwise display as empty, so the editor
+			// opens the constraint popover for the user to pick a target.
+			openConstraintPopover:
+				parsed === 'structured' &&
+				flavor === 'simpledsp' &&
+				!(stmt.shapeRefs?.length || stmt.classConstraint?.length),
+		};
+	}
+
+	if (field === 'constraint') {
+		// Parse the composed display back with the same precedence the
+		// display used so a constraint sourced from
+		// classConstraint/inScheme/values returns to its field instead
+		// of being dumped into `constraint`/`datatype`.
+		return commit(
+			flavor === 'simpledsp'
+				? parseSimpleDspConstraintCell(value, stmt)
+				: parseDctapConstraintCell(value, stmt)
+		);
+	}
+
+	if (field === 'datatype') {
+		// Free-text edit of valueDataType: split on whitespace so
+		// multi-datatype profiles (DCMI SRAP, SimpleDSP) survive a
+		// commit-and-reopen round-trip.
+		return commit({ datatype: value.split(/\s+/).filter(Boolean) });
+	}
+
+	return commit({ [field]: value } as Partial<Statement>);
 }
