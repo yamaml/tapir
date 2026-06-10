@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { TapirProject } from '$lib/types';
+	import type { TapirProject, GeneratorWarning } from '$lib/types';
 	import { downloadText, downloadBlob } from '$lib/utils/file-io';
 	import {
 		buildSimpleDsp,
@@ -56,6 +56,13 @@
 
 	let exporting = $state(false);
 	let exportError = $state<string | null>(null);
+	/**
+	 * Warnings the generators accumulated while producing the last
+	 * export (lossy mappings, sanitised cells, unresolvable prefixes).
+	 * Non-blocking: the file still downloads; the panel below the
+	 * header lists what to double-check.
+	 */
+	let exportWarnings = $state<string[]>([]);
 
 	// ── Post-export feedback ────────────────────────────────────────
 	//
@@ -223,7 +230,7 @@
 
 	/** Soft-warn: validation issues that don't break the file. */
 	function getValidationWarnings(): string[] {
-		const result = validateProject(project);
+		const result = validateProject(project, undefined, $simpleDspLang);
 		return [...result.errors, ...result.warnings].map((e) => e.message);
 	}
 
@@ -231,8 +238,8 @@
 	let pendingExportId = $state<string | null>(null);
 	let validationIssues = $state<string[]>([]);
 
-	function dctapRowsToCsv(delimiter: string): string {
-		const rows = buildDctapRows(project);
+	function dctapRowsToCsv(delimiter: string, warnings?: GeneratorWarning[]): string {
+		const rows = buildDctapRows(project, { warnings });
 		const header = DCTAP_COLUMNS.join(delimiter);
 		const body = rows
 			.map((row) =>
@@ -251,6 +258,11 @@
 	async function handleExport(optionId: string, skipValidation = false): Promise<void> {
 		exporting = true;
 		exportError = null;
+		exportWarnings = [];
+
+		// Accumulator handed to every generator that supports warning
+		// collection; surfaced (non-blocking) after the download fires.
+		const warnings: GeneratorWarning[] = [];
 
 		try {
 			// Hard block: structural issues that would produce broken files
@@ -282,44 +294,44 @@
 
 			switch (optionId) {
 				case 'simpledsp-tsv': {
-					const content = buildSimpleDsp(project, { lang: $simpleDspLang });
+					const content = buildSimpleDsp(project, { lang: $simpleDspLang, warnings });
 					emitted = `${name}.tsv`;
 					downloadText(content, emitted, 'text/tab-separated-values');
 					break;
 				}
 				case 'simpledsp-csv': {
-					const tsvContent = buildSimpleDsp(project, { lang: $simpleDspLang });
+					const tsvContent = buildSimpleDsp(project, { lang: $simpleDspLang, warnings });
 					const content = tsvToCsv(tsvContent);
 					emitted = `${name}-simpledsp.csv`;
 					downloadText(content, emitted, 'text/csv');
 					break;
 				}
 				case 'dctap-csv': {
-					const content = dctapRowsToCsv(',');
+					const content = dctapRowsToCsv(',', warnings);
 					emitted = `${name}-dctap.csv`;
 					downloadText(content, emitted, 'text/csv');
 					break;
 				}
 				case 'dctap-tsv': {
-					const content = dctapRowsToCsv('\t');
+					const content = dctapRowsToCsv('\t', warnings);
 					emitted = `${name}-dctap.tsv`;
 					downloadText(content, emitted, 'text/tab-separated-values');
 					break;
 				}
 				case 'shacl-turtle': {
-					const content = await buildShacl(project, 'turtle');
+					const content = await buildShacl(project, 'turtle', warnings);
 					emitted = `${name}.shacl.ttl`;
 					downloadText(content, emitted, 'text/turtle');
 					break;
 				}
 				case 'shex': {
-					const content = buildShExC(project);
+					const content = buildShExC(project, warnings);
 					emitted = `${name}.shex`;
 					downloadText(content, emitted, 'text/shex');
 					break;
 				}
 				case 'owldsp-turtle': {
-					const content = await buildOwlDsp(project, 'turtle');
+					const content = await buildOwlDsp(project, 'turtle', warnings);
 					emitted = `${name}.owldsp.ttl`;
 					downloadText(content, emitted, 'text/turtle');
 					break;
@@ -337,7 +349,7 @@
 					break;
 				}
 				case 'datapackage': {
-					const content = buildDataPackage(project);
+					const content = buildDataPackage(project, 2, warnings);
 					emitted = `${name}-datapackage.json`;
 					downloadText(content, emitted, 'application/json');
 					break;
@@ -405,14 +417,19 @@
 					exportError = `Unknown export format: ${optionId}`;
 			}
 
+			// Surface generator warnings (deduplicated) without blocking
+			// the download — the file is already on disk.
+			exportWarnings = [...new Set(warnings.map((w) => w.message))];
+
 			if (!exportError && emitted) {
 				// The Profile Package is the "give me everything" exit
-				// action — still close the modal on that one. Every
-				// individual-format export keeps the modal open so
-				// the user can chain multiple downloads from a single
-				// session (a common real-world flow — e.g. SVG + PDF
-				// + DOT of the same diagram).
-				if (optionId === 'package-zip') {
+				// action — still close the modal on that one (unless the
+				// generators warned: then stay open so the user sees the
+				// warnings). Every individual-format export keeps the
+				// modal open so the user can chain multiple downloads
+				// from a single session (a common real-world flow — e.g.
+				// SVG + PDF + DOT of the same diagram).
+				if (optionId === 'package-zip' && exportWarnings.length === 0) {
 					open = false;
 					onclose();
 				} else {
@@ -466,6 +483,7 @@
 			}
 			lastExportedId = null;
 			lastExportedFilename = null;
+			exportWarnings = [];
 			onclose();
 		}
 	}}
@@ -481,6 +499,34 @@
 		{#if exportError}
 			<div class="mx-5 mt-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
 				{exportError}
+			</div>
+		{:else if exportWarnings.length > 0}
+			<!--
+				Generator warnings (lossy mappings, sanitised cells, …)
+				collected while producing the last export. Non-blocking:
+				the download already fired; this panel lists what to
+				double-check in the emitted file.
+			-->
+			<div class="mx-5 mt-3 rounded-md border border-amber-400/40 bg-amber-50 px-3 py-2 text-xs dark:border-amber-600/40 dark:bg-amber-950/40">
+				<div class="flex items-start gap-2">
+					<AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+					<div class="min-w-0 flex-1 text-amber-900 dark:text-amber-200">
+						<p class="font-semibold mb-0.5">
+							Exported with {exportWarnings.length} {exportWarnings.length === 1 ? 'warning' : 'warnings'}
+							{#if lastExportedFilename}
+								— <code class="font-mono">{lastExportedFilename}</code> downloaded
+							{/if}
+						</p>
+						<div class="space-y-0.5 max-h-24 overflow-y-auto opacity-90">
+							{#each exportWarnings.slice(0, 6) as w}
+								<div>{w}</div>
+							{/each}
+							{#if exportWarnings.length > 6}
+								<div class="italic">and {exportWarnings.length - 6} more…</div>
+							{/if}
+						</div>
+					</div>
+				</div>
 			</div>
 		{:else if lastExportedFilename}
 			<!--
@@ -540,9 +586,11 @@
 					<FileSpreadsheet class="mr-1 h-3.5 w-3.5" />
 					Tabular
 				</TabsTrigger>
+				<!-- Flavor-neutral label: "Shapes" is DCTAP vocabulary and
+					 must never label SimpleDSP content (project rule). -->
 				<TabsTrigger value="constraint" class="text-xs">
 					<FileCode class="mr-1 h-3.5 w-3.5" />
-					Shapes
+					Constraints
 				</TabsTrigger>
 				<TabsTrigger value="other" class="text-xs">
 					<FileText class="mr-1 h-3.5 w-3.5" />
