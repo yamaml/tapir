@@ -18,6 +18,7 @@ import { validateProject } from '$lib/utils/validation';
 import { parseYamaYaml } from '$lib/converters/yaml-parser';
 import { parseSimpleDsp } from '$lib/converters/simpledsp-parser';
 import { dctapRowsToTapir, type DctapRow } from '$lib/converters/dctap-parser';
+import { parseCsvRecords } from '$lib/converters/csv';
 import { readFile, readFileBytes } from '$lib/utils/file-io';
 
 // ── Types ───────────────────────────────────────────────────────
@@ -41,67 +42,17 @@ const DCTAP_HEADERS = ['shapeid', 'propertyid'];
 /**
  * Parses a CSV string into an array of row objects.
  *
- * Handles quoted fields containing commas and newlines.
+ * Delegates to the shared RFC 4180 parser (`converters/csv`), so
+ * quoted fields containing commas **and newlines** survive intact,
+ * doubled quotes decode, a leading BOM is stripped, and whitespace
+ * inside quoted cells is preserved (only unquoted cells are trimmed).
  *
  * @param text - The CSV text content.
  * @param delimiter - Field delimiter (default: `','`).
  * @returns Array of row objects keyed by header names.
  */
 export function parseCsvRows(text: string, delimiter: string = ','): Record<string, string>[] {
-	const lines = text.split(/\r?\n/);
-	if (lines.length < 2) return [];
-
-	const headers = splitCsvLine(lines[0], delimiter).map((h) => h.trim());
-	const rows: Record<string, string>[] = [];
-
-	for (let i = 1; i < lines.length; i++) {
-		const line = lines[i].trim();
-		if (!line) continue;
-
-		const cells = splitCsvLine(line, delimiter);
-		const row: Record<string, string> = {};
-		for (let j = 0; j < headers.length; j++) {
-			row[headers[j]] = (cells[j] || '').trim();
-		}
-		rows.push(row);
-	}
-
-	return rows;
-}
-
-/**
- * Splits a CSV line respecting quoted fields.
- */
-function splitCsvLine(line: string, delimiter: string): string[] {
-	const result: string[] = [];
-	let current = '';
-	let inQuotes = false;
-
-	for (let i = 0; i < line.length; i++) {
-		const ch = line[i];
-		if (inQuotes) {
-			if (ch === '"') {
-				if (i + 1 < line.length && line[i + 1] === '"') {
-					current += '"';
-					i++;
-				} else {
-					inQuotes = false;
-				}
-			} else {
-				current += ch;
-			}
-		} else if (ch === '"') {
-			inQuotes = true;
-		} else if (ch === delimiter) {
-			result.push(current);
-			current = '';
-		} else {
-			current += ch;
-		}
-	}
-	result.push(current);
-
-	return result;
+	return parseCsvRecords(text, delimiter);
 }
 
 /**
@@ -272,7 +223,10 @@ async function importSimpleDspTsv(file: File, projectName: string): Promise<Impo
 }
 
 async function importCsv(file: File, projectName: string): Promise<ImportResult> {
-	const text = await readFile(file);
+	const raw = await readFile(file);
+	// Strip a UTF-8 BOM before sniffing the first line; the parsers
+	// handle the BOM themselves, but format detection must not see it.
+	const text = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;
 	const firstLine = text.split(/\r?\n/)[0] || '';
 
 	// Check if it looks like a tab-separated SimpleDSP (sometimes saved as .csv)
