@@ -36,9 +36,14 @@
  */
 
 import type { TapirProject, Description, Statement, NamespaceMap } from '$lib/types';
-import type { RdfFormat } from '$lib/types/export';
+import type { RdfFormat, GeneratorWarning } from '$lib/types/export';
 import { expandPrefixed } from '$lib/utils/iri-utils';
 import { buildRdfList } from './shacl-generator';
+import {
+	buildResolutionMap,
+	collectUsedPrefixes,
+	warnIfIllegalIriName,
+} from './prefix-utils';
 import N3 from 'n3';
 
 const { DataFactory } = N3;
@@ -82,8 +87,45 @@ const N3_FORMAT_MAP: Record<RdfFormat, string> = {
 	ntriples: 'N-Triples',
 	nquads: 'N-Quads',
 	trig: 'TriG',
-	jsonld: 'N-Triples',
 };
+
+// ── Statement IRI Minting ───────────────────────────────────────
+
+/**
+ * Mints a unique, IRI-safe statement-template IRI.
+ *
+ * The local key derives from the statement's label, else the
+ * property's local name, else its id. IRI-hostile characters
+ * (whitespace, `:`, separators, quotes…) become `_`; collisions —
+ * e.g. SRAP's two `Creator` rows — get a `-2`, `-3` counter so two
+ * statements can never share a `dsp:StatementTemplate` node.
+ *
+ * @param descName - Parent description name (IRI prefix component).
+ * @param stmt - The statement to mint for.
+ * @param base - Document base IRI.
+ * @param usedIris - Already-minted IRIs (mutated to include the result).
+ * @returns The unique statement IRI.
+ */
+export function mintStatementIri(
+	descName: string,
+	stmt: Statement,
+	base: string,
+	usedIris: Set<string>
+): string {
+	const propertyLocal = (stmt.propertyId || '').split(/[:#/]/).filter(Boolean).pop() || '';
+	const rawKey = stmt.label || propertyLocal || stmt.id;
+	const safeKey = rawKey.replace(/[^\p{L}\p{N}._~-]+/gu, '_').replace(/^_+|_+$/g, '') || 'stmt';
+
+	const mint = (suffix: string) =>
+		base ? `${base}${descName}-${safeKey}${suffix}` : `${descName}-${safeKey}${suffix}`;
+
+	let iri = mint('');
+	for (let n = 2; usedIris.has(iri); n++) {
+		iri = mint(`-${n}`);
+	}
+	usedIris.add(iri);
+	return iri;
+}
 
 // ── Statement Template Builder ──────────────────────────────────
 
@@ -99,6 +141,7 @@ const N3_FORMAT_MAP: Record<RdfFormat, string> = {
  * @param namespaces - Prefix-to-IRI map.
  * @param base - Document base IRI.
  * @param quads - Accumulator for generated quads.
+ * @param usedIris - Accumulator of minted statement IRIs (collision-proof).
  * @returns The statement template's named node.
  */
 export function buildStatementTemplate(
@@ -106,11 +149,10 @@ export function buildStatementTemplate(
 	stmt: Statement,
 	namespaces: NamespaceMap,
 	base: string,
-	quads: N3.Quad[]
+	quads: N3.Quad[],
+	usedIris: Set<string> = new Set()
 ): N3.NamedNode {
-	const stmtKey = stmt.label || stmt.propertyId || stmt.id;
-	const safeKey = stmtKey.replace(/\s+/g, '_');
-	const stmtIri = base ? `${base}${descName}-${safeKey}` : `${descName}-${safeKey}`;
+	const stmtIri = mintStatementIri(descName, stmt, base, usedIris);
 	const stmtNode = namedNode(stmtIri);
 
 	quads.push(quad(stmtNode, RDF_TYPE, DSP_STATEMENT_TEMPLATE));
@@ -268,13 +310,20 @@ export function buildStatementTemplate(
  * @param namespaces - Prefix-to-IRI map.
  * @param base - Document base IRI.
  * @param quads - Accumulator.
+ * @param usedIris - Accumulator of minted statement IRIs.
+ * @param warnings - Optional accumulator for lossy-mapping warnings.
  */
 export function buildDescriptionTemplate(
 	desc: Description,
 	namespaces: NamespaceMap,
 	base: string,
-	quads: N3.Quad[]
+	quads: N3.Quad[],
+	usedIris: Set<string> = new Set(),
+	warnings?: GeneratorWarning[]
 ): void {
+	// Description IRIs are minted by concatenation (matching yama-cli);
+	// names with IRI-illegal characters produce invalid output.
+	warnIfIllegalIriName(desc.name, warnings);
 	const descIri = base ? `${base}${desc.name}` : desc.name;
 	const descNode = namedNode(descIri);
 
@@ -302,7 +351,7 @@ export function buildDescriptionTemplate(
 
 	// Link each statement to the description via rdfs:subClassOf
 	for (const stmt of desc.statements || []) {
-		const stmtNode = buildStatementTemplate(desc.name, stmt, namespaces, base, quads);
+		const stmtNode = buildStatementTemplate(desc.name, stmt, namespaces, base, quads, usedIris);
 		quads.push(quad(descNode, RDFS_SUBCLASS_OF, stmtNode));
 	}
 }
@@ -319,16 +368,19 @@ export function buildDescriptionTemplate(
  * @param project - The Tapir project.
  * @param namespaces - Prefix-to-IRI map (project namespaces + dsp).
  * @param base - Document base IRI.
+ * @param warnings - Optional accumulator for lossy-mapping warnings.
  * @returns Array of N3 quads.
  */
 export function buildOwlDspQuads(
 	project: TapirProject,
 	namespaces: NamespaceMap,
-	base: string
+	base: string,
+	warnings?: GeneratorWarning[]
 ): N3.Quad[] {
 	const quads: N3.Quad[] = [];
+	const usedIris = new Set<string>();
 	for (const desc of project.descriptions || []) {
-		buildDescriptionTemplate(desc, namespaces, base, quads);
+		buildDescriptionTemplate(desc, namespaces, base, quads, usedIris, warnings);
 	}
 	return quads;
 }
@@ -339,10 +391,14 @@ export function buildOwlDspQuads(
  * Generates an OWL-DSP graph string from a `TapirProject`.
  *
  * Builds OWL-DSP quads using the `dsp:` ontology and serializes them
- * with N3.Writer. Defaults to Turtle format.
+ * with N3.Writer. Defaults to Turtle format. CURIEs resolve through
+ * `{ ...STANDARD_PREFIXES, ...project.namespaces }` (the full
+ * 10-entry standard table, not just dsp/rdfs/owl/xsd); the output
+ * declares every prefix actually used.
  *
  * @param project - The Tapir project to export.
  * @param format - RDF serialization format (defaults to `'turtle'`).
+ * @param warnings - Optional accumulator for lossy-mapping warnings.
  * @returns A promise resolving to the serialized OWL-DSP string.
  *
  * @example
@@ -350,24 +406,19 @@ export function buildOwlDspQuads(
  */
 export function buildOwlDsp(
 	project: TapirProject,
-	format: RdfFormat = 'turtle'
+	format: RdfFormat = 'turtle',
+	warnings?: GeneratorWarning[]
 ): Promise<string> {
-	const namespaces: NamespaceMap = {
-		dsp: DSP,
-		rdfs: RDFS,
-		owl: OWL,
-		xsd: XSD,
-		...(project.namespaces || {}),
-	};
+	const namespaces: NamespaceMap = buildResolutionMap(project, { dsp: DSP });
 	const base = project.base || '';
 
-	const quads = buildOwlDspQuads(project, namespaces, base);
+	const quads = buildOwlDspQuads(project, namespaces, base, warnings);
 
 	return new Promise((resolve, reject) => {
 		const n3Format = N3_FORMAT_MAP[format] || 'Turtle';
 		const writer = new N3.Writer({
 			format: n3Format,
-			prefixes: namespaces,
+			prefixes: collectUsedPrefixes(quads, namespaces),
 		});
 
 		for (const q of quads) {

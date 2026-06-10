@@ -20,16 +20,26 @@ function makeProject(overrides?: Partial<TapirProject>): TapirProject {
 // ── formatCardinality ───────────────────────────────────────────
 
 describe('formatCardinality', () => {
-	it('returns empty string when both null', () => {
-		expect(formatCardinality(null, null)).toBe('');
+	it('returns * when both unset (YAMAML: absent = no constraint)', () => {
+		expect(formatCardinality(null, null)).toBe(' *');
+		expect(formatCardinality(undefined, undefined)).toBe(' *');
 	});
 
 	it('returns * for 0..unbounded', () => {
-		expect(formatCardinality(0, -1)).toBe(' *');
+		expect(formatCardinality(0, null)).toBe(' *');
 	});
 
 	it('returns + for 1..unbounded', () => {
-		expect(formatCardinality(1, -1)).toBe(' +');
+		expect(formatCardinality(1, null)).toBe(' +');
+	});
+
+	it('returns empty string for exactly-one (ShEx default)', () => {
+		expect(formatCardinality(1, 1)).toBe('');
+	});
+
+	it('treats max-without-min as optional, not mandatory', () => {
+		// max 1, min unset → {0,1} → ?  (previously exported as {1})
+		expect(formatCardinality(undefined, 1)).toBe(' ?');
 	});
 
 	it('returns ? for 0..1', () => {
@@ -92,12 +102,32 @@ describe('formatNodeConstraint', () => {
 		expect(formatNodeConstraint(stmt)).toBe('LITERAL');
 	});
 
-	it('appends pattern facet', () => {
+	it('appends pattern facet as a single-slash REGEXP token', () => {
 		const stmt = createStatement({
 			datatype: ['xsd:string'],
 			pattern: '^[A-Z]',
 		});
-		expect(formatNodeConstraint(stmt)).toBe('xsd:string //^[A-Z]//');
+		// `//pattern//` cannot lex in ShExC — the REGEXP token is
+		// '/' body '/' with literal slashes escaped.
+		expect(formatNodeConstraint(stmt)).toBe('xsd:string /^[A-Z]/');
+	});
+
+	it('escapes literal slashes inside patterns', () => {
+		const stmt = createStatement({ pattern: 'a/b' });
+		expect(formatNodeConstraint(stmt)).toContain('/a\\/b/');
+	});
+
+	it('escapes quotes and backslashes in literal value sets', () => {
+		const stmt = createStatement({ values: ['say "hi"', 'back\\slash'] });
+		expect(formatNodeConstraint(stmt)).toBe('["say \\"hi\\"" "back\\\\slash"]');
+	});
+
+	it('emits IRI-typed value sets as IRI terms, not string literals', () => {
+		const stmt = createStatement({
+			valueType: 'iri',
+			values: ['foaf:Person', 'http://example.org/Agent'],
+		});
+		expect(formatNodeConstraint(stmt)).toBe('[foaf:Person <http://example.org/Agent>]');
 	});
 
 	it('appends numeric facets', () => {
@@ -197,7 +227,7 @@ describe('buildShExC', () => {
 						propertyId: 'foaf:knows',
 						shapeRefs: ['Person'],
 						min: 0,
-						max: -1,
+						max: null,
 					}),
 				],
 			}),
@@ -264,7 +294,7 @@ describe('buildShExC', () => {
 						propertyId: 'foaf:knows',
 						shapeRefs: ['Person'],
 						min: 0,
-						max: -1,
+						max: null,
 					}),
 				],
 			}),

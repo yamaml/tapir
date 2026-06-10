@@ -25,10 +25,22 @@
  * | Statement.valueType (bnode)| sh:nodeKind sh:BlankNodeOrIRI |
  * | Statement.shapeRefs (single) | sh:node                       |
  * | Statement.shapeRefs (many)   | sh:or ([sh:node ... ])        |
+ * | Statement.classConstraint  | sh:class (sh:or when many)     |
+ * | Statement.inScheme         | sh:pattern "^<stem>" (sh:or when many) |
  * | Statement.facets.MinInclusive | sh:minInclusive            |
  * | Statement.facets.MaxInclusive | sh:maxInclusive            |
+ * | Statement.facets.MinExclusive | sh:minExclusive            |
+ * | Statement.facets.MaxExclusive | sh:maxExclusive            |
+ * | Statement.facets.MinLength | sh:minLength                  |
+ * | Statement.facets.MaxLength | sh:maxLength                  |
  * | Statement.pattern          | sh:pattern                    |
- * | Statement.values           | sh:in                         |
+ * | Statement.values (literal) | sh:in (string literals)       |
+ * | Statement.values (iri)     | sh:in (IRI terms)             |
+ * | languageTag constraint     | sh:languageIn                 |
+ *
+ * CURIEs resolve against the project's namespaces with the standard
+ * prefix table (SimpleDSP §7) as a fallback; declarations are emitted
+ * for every prefix actually used.
  *
  * Ported from yama-cli `src/modules/shacl.js`.
  *
@@ -36,9 +48,14 @@
  * @see https://www.w3.org/TR/shacl/
  */
 
-import type { TapirProject, Description, Statement, NamespaceMap } from '$lib/types';
-import type { RdfFormat } from '$lib/types/export';
+import type { TapirProject, Statement, NamespaceMap } from '$lib/types';
+import type { RdfFormat, GeneratorWarning } from '$lib/types/export';
 import { expandPrefixed } from '$lib/utils/iri-utils';
+import {
+	buildResolutionMap,
+	collectUsedPrefixes,
+	warnIfIllegalIriName,
+} from './prefix-utils';
 import N3 from 'n3';
 
 const { DataFactory } = N3;
@@ -64,6 +81,12 @@ const SH_NODE_KIND = namedNode(`${SH}nodeKind`);
 const SH_NODE = namedNode(`${SH}node`);
 const SH_MIN_INCLUSIVE = namedNode(`${SH}minInclusive`);
 const SH_MAX_INCLUSIVE = namedNode(`${SH}maxInclusive`);
+const SH_MIN_EXCLUSIVE = namedNode(`${SH}minExclusive`);
+const SH_MAX_EXCLUSIVE = namedNode(`${SH}maxExclusive`);
+const SH_MIN_LENGTH = namedNode(`${SH}minLength`);
+const SH_MAX_LENGTH = namedNode(`${SH}maxLength`);
+const SH_CLASS = namedNode(`${SH}class`);
+const SH_LANGUAGE_IN = namedNode(`${SH}languageIn`);
 const SH_PATTERN = namedNode(`${SH}pattern`);
 const SH_IN = namedNode(`${SH}in`);
 const SH_IRI = namedNode(`${SH}IRI`);
@@ -90,8 +113,14 @@ const N3_FORMAT_MAP: Record<RdfFormat, string> = {
 	ntriples: 'N-Triples',
 	nquads: 'N-Quads',
 	trig: 'TriG',
-	jsonld: 'N-Triples', // fallback; JSON-LD handled separately
 };
+
+// ── Regex Escaping ──────────────────────────────────────────────
+
+/** Escapes regex metacharacters so a URI stem can anchor a sh:pattern. */
+function escapeRegex(s: string): string {
+	return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 // ── RDF List Builder ────────────────────────────────────────────
 
@@ -157,13 +186,15 @@ export function resolveNodeKind(type: string): N3.NamedNode | null {
  * @param namespaces - Prefix-to-IRI map.
  * @param base - Document base IRI.
  * @param quads - Accumulator for generated quads.
+ * @param warnings - Optional accumulator for lossy-mapping warnings.
  */
 export function buildPropertyShape(
 	shapeNode: N3.NamedNode,
 	stmt: Statement,
 	namespaces: NamespaceMap,
 	base: string,
-	quads: N3.Quad[]
+	quads: N3.Quad[],
+	warnings?: GeneratorWarning[]
 ): void {
 	const propertyIri = expandPrefixed(stmt.propertyId, namespaces, base);
 	if (!propertyIri) return;
@@ -244,17 +275,84 @@ export function buildPropertyShape(
 		quads.push(quad(propNode, SH_OR, listHead));
 	}
 
+	// sh:class -- class constraint on the value node (sh:or when many).
+	const classes = stmt.classConstraint ?? [];
+	if (classes.length === 1) {
+		const classIri = expandPrefixed(classes[0], namespaces, base);
+		if (classIri) {
+			quads.push(quad(propNode, SH_CLASS, namedNode(classIri)));
+		}
+	} else if (classes.length > 1) {
+		const classAnons = classes
+			.map((c) => {
+				const classIri = expandPrefixed(c, namespaces, base);
+				if (!classIri) return null;
+				const anon = blankNode();
+				quads.push(quad(anon, SH_CLASS, namedNode(classIri)));
+				return anon;
+			})
+			.filter((n): n is ReturnType<typeof blankNode> => n !== null);
+		if (classAnons.length > 0) {
+			quads.push(quad(propNode, SH_OR, buildRdfList(classAnons, quads)));
+		}
+	}
+
+	// inScheme — vocabulary namespace constraint. SHACL has no native
+	// "in scheme" term, so the stem becomes an anchored sh:pattern on
+	// the value IRI (the same reading DCTAP gives IRIstem).
+	const schemes = (stmt.inScheme ?? [])
+		.map((s) => {
+			const iri = expandPrefixed(s, namespaces, base);
+			if (!iri || !/^(https?|urn):/.test(iri)) {
+				warnings?.push({
+					message: `Statement "${stmt.label || stmt.propertyId}": inScheme stem "${s}" does not resolve to a namespace URI — omitted from SHACL output`,
+				});
+				return null;
+			}
+			return iri;
+		})
+		.filter((s): s is string => s !== null);
+	if (schemes.length === 1) {
+		quads.push(quad(propNode, SH_PATTERN, literal(`^${escapeRegex(schemes[0])}`)));
+	} else if (schemes.length > 1) {
+		const schemeAnons = schemes.map((s) => {
+			const anon = blankNode();
+			quads.push(quad(anon, SH_PATTERN, literal(`^${escapeRegex(s)}`)));
+			return anon;
+		});
+		quads.push(quad(propNode, SH_OR, buildRdfList(schemeAnons, quads)));
+	}
+
 	// Facets
 	if (stmt.facets) {
-		if (stmt.facets.MinInclusive != null) {
-			quads.push(
-				quad(propNode, SH_MIN_INCLUSIVE, literal(String(stmt.facets.MinInclusive), XSD_DECIMAL))
-			);
+		const numericFacets: Array<[number | undefined, N3.NamedNode]> = [
+			[stmt.facets.MinInclusive, SH_MIN_INCLUSIVE],
+			[stmt.facets.MaxInclusive, SH_MAX_INCLUSIVE],
+			[stmt.facets.MinExclusive, SH_MIN_EXCLUSIVE],
+			[stmt.facets.MaxExclusive, SH_MAX_EXCLUSIVE],
+		];
+		for (const [value, predicate] of numericFacets) {
+			if (value != null) {
+				quads.push(quad(propNode, predicate, literal(String(value), XSD_DECIMAL)));
+			}
 		}
-		if (stmt.facets.MaxInclusive != null) {
-			quads.push(
-				quad(propNode, SH_MAX_INCLUSIVE, literal(String(stmt.facets.MaxInclusive), XSD_DECIMAL))
-			);
+		if (stmt.facets.MinLength != null) {
+			quads.push(quad(propNode, SH_MIN_LENGTH, literal(String(stmt.facets.MinLength), XSD_INTEGER)));
+		}
+		if (stmt.facets.MaxLength != null) {
+			quads.push(quad(propNode, SH_MAX_LENGTH, literal(String(stmt.facets.MaxLength), XSD_INTEGER)));
+		}
+		// Length: SHACL core has no sh:length — emit the equivalent pair.
+		if (stmt.facets.Length != null) {
+			quads.push(quad(propNode, SH_MIN_LENGTH, literal(String(stmt.facets.Length), XSD_INTEGER)));
+			quads.push(quad(propNode, SH_MAX_LENGTH, literal(String(stmt.facets.Length), XSD_INTEGER)));
+		}
+		for (const unmappable of ['TotalDigits', 'FractionDigits'] as const) {
+			if (stmt.facets[unmappable] != null) {
+				warnings?.push({
+					message: `Statement "${stmt.label || stmt.propertyId}": facet ${unmappable} has no SHACL core equivalent — omitted`,
+				});
+			}
 		}
 	}
 
@@ -263,11 +361,26 @@ export function buildPropertyShape(
 		quads.push(quad(propNode, SH_PATTERN, literal(stmt.pattern)));
 	}
 
-	// sh:in (enumerated values)
+	// Enumerated values. Language-tag constraints map to sh:languageIn;
+	// IRI-typed value sets become IRI terms (a string literal can never
+	// equal an IRI node, so emitting literals made the constraint
+	// unsatisfiable); literal value sets stay literals.
 	if (Array.isArray(stmt.values) && stmt.values.length > 0) {
-		const items = stmt.values.map((v) => literal(String(v)));
-		const listHead = buildRdfList(items, quads);
-		quads.push(quad(propNode, SH_IN, listHead));
+		if ((stmt.constraintType || '').toLowerCase() === 'languagetag') {
+			const items = stmt.values.map((v) => literal(String(v)));
+			quads.push(quad(propNode, SH_LANGUAGE_IN, buildRdfList(items, quads)));
+		} else if (stmt.valueType === 'iri') {
+			const items = stmt.values
+				.map((v) => expandPrefixed(String(v), namespaces, base))
+				.filter((iri): iri is string => !!iri)
+				.map((iri) => namedNode(iri));
+			if (items.length > 0) {
+				quads.push(quad(propNode, SH_IN, buildRdfList(items, quads)));
+			}
+		} else {
+			const items = stmt.values.map((v) => literal(String(v)));
+			quads.push(quad(propNode, SH_IN, buildRdfList(items, quads)));
+		}
 	}
 }
 
@@ -283,17 +396,22 @@ export function buildPropertyShape(
  * @param project - The Tapir project.
  * @param namespaces - Prefix-to-IRI map (project namespaces + sh).
  * @param base - Document base IRI.
+ * @param warnings - Optional accumulator for lossy-mapping warnings.
  * @returns Array of N3 quads.
  */
 export function buildShaclQuads(
 	project: TapirProject,
 	namespaces: NamespaceMap,
-	base: string
+	base: string,
+	warnings?: GeneratorWarning[]
 ): N3.Quad[] {
 	const quads: N3.Quad[] = [];
 	const descriptions = project.descriptions || [];
 
 	for (const desc of descriptions) {
+		// Shape IRIs are minted by concatenation (matching yama-cli);
+		// names with IRI-illegal characters produce invalid output.
+		warnIfIllegalIriName(desc.name, warnings);
 		const shapeIri = base ? base + desc.name : desc.name;
 		const shapeNode = namedNode(shapeIri);
 
@@ -329,7 +447,7 @@ export function buildShaclQuads(
 		if (!desc.statements) continue;
 
 		for (const stmt of desc.statements) {
-			buildPropertyShape(shapeNode, stmt, namespaces, base, quads);
+			buildPropertyShape(shapeNode, stmt, namespaces, base, quads, warnings);
 		}
 	}
 
@@ -342,10 +460,13 @@ export function buildShaclQuads(
  * Generates a SHACL shapes graph string from a `TapirProject`.
  *
  * Builds SHACL quads from the project and serializes them using
- * N3.Writer. Defaults to Turtle format.
+ * N3.Writer. Defaults to Turtle format. CURIEs resolve through
+ * `{ ...STANDARD_PREFIXES, ...project.namespaces }`; the output
+ * declares every prefix actually used.
  *
  * @param project - The Tapir project to export.
  * @param format - RDF serialization format (defaults to `'turtle'`).
+ * @param warnings - Optional accumulator for lossy-mapping warnings.
  * @returns A promise resolving to the serialized SHACL string.
  *
  * @example
@@ -357,21 +478,19 @@ export function buildShaclQuads(
  */
 export function buildShacl(
 	project: TapirProject,
-	format: RdfFormat = 'turtle'
+	format: RdfFormat = 'turtle',
+	warnings?: GeneratorWarning[]
 ): Promise<string> {
-	const namespaces: NamespaceMap = {
-		sh: SH,
-		...(project.namespaces || {}),
-	};
+	const namespaces: NamespaceMap = buildResolutionMap(project, { sh: SH });
 	const base = project.base || '';
 
-	const quads = buildShaclQuads(project, namespaces, base);
+	const quads = buildShaclQuads(project, namespaces, base, warnings);
 
 	return new Promise((resolve, reject) => {
 		const n3Format = N3_FORMAT_MAP[format] || 'Turtle';
 		const writer = new N3.Writer({
 			format: n3Format,
-			prefixes: namespaces,
+			prefixes: collectUsedPrefixes(quads, namespaces),
 		});
 
 		for (const q of quads) {

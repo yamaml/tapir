@@ -3,6 +3,8 @@
  * @module converters
  */
 
+export * from './csv';
+export * from './prefix-utils';
 export * from './simpledsp-generator';
 export * from './simpledsp-parser';
 export * from './dctap-generator';

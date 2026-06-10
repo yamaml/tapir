@@ -20,8 +20,14 @@
  * | Statement.shapeRefs (single) | Shape reference (`@<shape>`)          |
  * | Statement.shapeRefs (many)   | Disjunction (`(@<A> OR @<B>)`)        |
  * | Statement.facets         | Numeric facets (`MinInclusive`, etc.) |
- * | Statement.pattern        | String facet (`/pattern/`)            |
- * | Statement.values         | Value set (`["a" "b"]`)               |
+ * | Statement.pattern        | String facet (`/pattern/`, `/` escaped)|
+ * | Statement.values (literal)| Value set (`["a" "b"]`)              |
+ * | Statement.values (iri)   | Value set of IRIs (`[ex:a <http://…>]`)|
+ *
+ * Every prefix used in the output gets a `PREFIX` declaration —
+ * prefixed names without declarations are not lexable ShExC. CURIEs
+ * resolve against the project's namespaces with the standard prefix
+ * table (SimpleDSP §7) as a fallback.
  *
  * Ported from yama-cli `src/modules/shex.js`.
  *
@@ -30,47 +36,69 @@
  * @see https://shexspec.github.io/primer/
  */
 
-import type { TapirProject, Statement, FacetName } from '$lib/types';
+import type { TapirProject, Statement, FacetName, NamespaceMap } from '$lib/types';
+import type { GeneratorWarning } from '$lib/types/export';
+import { buildResolutionMap, warnIfIllegalIriName } from './prefix-utils';
 
 // ── Cardinality Formatting ──────────────────────────────────────
 
 /**
  * Formats a cardinality constraint as ShExC shorthand or `{m,n}` syntax.
  *
- * ShEx cardinality rules:
- *   - `*`     = {0,inf}
- *   - `+`     = {1,inf}
- *   - `?`     = {0,1}
- *   - `{n}`   = exactly n
- *   - `{m,n}` = between m and n
- *   - (omit)  = {1,1} (exactly once)
+ * YAMAML semantics: an absent bound means **no constraint** — absent
+ * min is 0, absent max is unbounded. (In raw ShExC, omitting the
+ * cardinality means exactly-one, so unconstrained statements must
+ * emit an explicit `*`.)
  *
- * @param min - Minimum cardinality (null = unspecified).
- * @param max - Maximum cardinality (null = unspecified).
- * @returns ShExC cardinality string (may be empty).
+ *   - (0, ∞) → ` *`
+ *   - (1, ∞) → ` +`
+ *   - (0, 1) → ` ?`
+ *   - (1, 1) → `` (ShEx default: exactly one)
+ *   - (m, ∞) → ` {m,}`
+ *   - (m, m) → ` {m}`
+ *   - (m, n) → ` {m,n}`
+ *
+ * @param min - Minimum cardinality (null/undefined = unspecified → 0).
+ * @param max - Maximum cardinality (null/undefined = unbounded).
+ * @returns ShExC cardinality string (may be empty for exactly-one).
  */
 export function formatCardinality(
 	min: number | null | undefined,
 	max: number | null | undefined
 ): string {
-	const hasMin = min != null;
-	const hasMax = max != null;
+	const m = min ?? 0;
+	const unbounded = max == null;
 
-	if (!hasMin && !hasMax) return '';
+	if (unbounded) {
+		if (m === 0) return ' *';
+		if (m === 1) return ' +';
+		return ` {${m},}`;
+	}
+	if (m === 0 && max === 1) return ' ?';
+	if (m === 1 && max === 1) return '';
+	if (m === max) return ` {${m}}`;
+	return ` {${m},${max}}`;
+}
 
-	const m = hasMin ? min! : 1;
-	const n = hasMax ? max! : -1; // -1 = unbounded
+// ── Token Helpers ───────────────────────────────────────────────
 
-	// Shorthands
-	if (m === 0 && n === -1) return ' *';
-	if (m === 1 && n === -1) return ' +';
-	if (m === 0 && n === 1) return ' ?';
+/** True when the term is a full IRI rather than a CURIE/local name. */
+function isFullIri(term: string): boolean {
+	return /^(https?|urn):/.test(term);
+}
 
-	// Exact
-	if (hasMin && !hasMax) return ` {${m},}`;
-	if (m === n) return ` {${m}}`;
+/**
+ * Formats an IRI-position term for ShExC: full IRIs get angle
+ * brackets, CURIEs stay as prefixed names (their prefixes are
+ * declared by `buildShExC`).
+ */
+function formatIriToken(term: string): string {
+	return isFullIri(term) ? `<${term}>` : term;
+}
 
-	return ` {${m},${n}}`;
+/** Escapes a string-literal member of a value set (`\` and `"`). */
+function escapeLiteral(value: string): string {
+	return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
 // ── Node Constraint Formatting ──────────────────────────────────
@@ -95,8 +123,12 @@ const FACET_NAMES: FacetName[] = [
  * value set, and bare node kind constraints per ShEx grammar:
  *   - Datatype: `xsd:string`
  *   - Shape ref: `@<shapeName>`
- *   - Value set: `["val1" "val2"]`
+ *   - Value set: `["val1" "val2"]` (literals escaped) or IRI members
  *   - Node kind: `IRI`, `LITERAL`, `BNODE`, `NONLITERAL`
+ *
+ * The pattern facet emits as a single-slash REGEXP token
+ * (`/pattern/`) with literal `/` escaped as `\/` — `//pattern//`
+ * cannot lex.
  *
  * @param stmt - The statement to format.
  * @returns ShExC node constraint string.
@@ -113,13 +145,18 @@ export function formatNodeConstraint(stmt: Statement): string {
 		parts.push(`(${refs.map((r) => `@<${r}>`).join(' OR ')})`);
 	} else if (dts.length === 1) {
 		// Datatype constraint (already prefixed, e.g. "xsd:string")
-		parts.push(dts[0]);
+		parts.push(formatIriToken(dts[0]));
 	} else if (dts.length > 1) {
 		// Multi-datatype → ShEx node-constraint disjunction.
-		parts.push(`(${dts.join(' OR ')})`);
+		parts.push(`(${dts.map(formatIriToken).join(' OR ')})`);
 	} else if (Array.isArray(stmt.values) && stmt.values.length > 0) {
-		// Value set
-		const vals = stmt.values.map((v) => `"${v}"`).join(' ');
+		// Value set. IRI-typed members are IRI terms (an IRI node can
+		// never equal a string literal); literal members are escaped
+		// string literals.
+		const vals =
+			stmt.valueType === 'iri'
+				? stmt.values.map((v) => formatIriToken(String(v))).join(' ')
+				: stmt.values.map((v) => `"${escapeLiteral(String(v))}"`).join(' ');
 		parts.push(`[${vals}]`);
 	} else {
 		// Bare node kind from valueType
@@ -127,9 +164,9 @@ export function formatNodeConstraint(stmt: Statement): string {
 		parts.push(type);
 	}
 
-	// String facet: pattern
+	// String facet: pattern — `/…/` REGEXP token, `/` escaped as `\/`.
 	if (stmt.pattern) {
-		parts.push(`//${stmt.pattern}//`);
+		parts.push(`/${stmt.pattern.replace(/\//g, '\\/')}/`);
 	}
 
 	// Numeric facets
@@ -144,21 +181,55 @@ export function formatNodeConstraint(stmt: Statement): string {
 	return parts.join(' ');
 }
 
+// ── Used-Prefix Collection ──────────────────────────────────────
+
+/**
+ * Collects the prefixes of every CURIE the schema will print, so each
+ * can receive a `PREFIX` declaration.
+ */
+function collectCuriePrefixes(project: TapirProject): Set<string> {
+	const prefixes = new Set<string>();
+	const add = (term: string | undefined) => {
+		if (!term || isFullIri(term)) return;
+		const colon = term.indexOf(':');
+		if (colon > 0) prefixes.add(term.slice(0, colon));
+	};
+
+	for (const desc of project.descriptions || []) {
+		add(desc.targetClass);
+		for (const stmt of desc.statements || []) {
+			if (!stmt.propertyId) continue;
+			add(stmt.propertyId);
+			for (const dt of stmt.datatype ?? []) add(dt);
+			if (
+				stmt.valueType === 'iri' &&
+				(stmt.shapeRefs ?? []).length === 0 &&
+				(stmt.datatype ?? []).length === 0
+			) {
+				for (const v of stmt.values ?? []) add(String(v));
+			}
+		}
+	}
+	return prefixes;
+}
+
 // ── Schema Builder ──────────────────────────────────────────────
 
 /**
  * Builds a ShExC schema string from a `TapirProject`.
  *
  * @param project - The Tapir project to export.
+ * @param warnings - Optional accumulator for lossy-mapping warnings.
  * @returns Complete ShExC schema as a string.
  *
  * @example
  * const shex = buildShExC(project);
  * console.log(shex);
  */
-export function buildShExC(project: TapirProject): string {
+export function buildShExC(project: TapirProject, warnings?: GeneratorWarning[]): string {
 	const lines: string[] = [];
-	const namespaces = project.namespaces || {};
+	const declared = project.namespaces || {};
+	const resolution = buildResolutionMap(project);
 	const base = project.base || '';
 
 	// Header
@@ -168,8 +239,21 @@ export function buildShExC(project: TapirProject): string {
 	lines.push('#');
 	lines.push('');
 
-	// PREFIX declarations
-	for (const [prefix, uri] of Object.entries(namespaces)) {
+	// PREFIX declarations: everything the project declares, plus
+	// standard-table fallbacks for prefixes the schema actually uses.
+	// A prefixed name without a declaration is invalid ShExC.
+	const emit: NamespaceMap = { ...declared };
+	for (const prefix of collectCuriePrefixes(project)) {
+		if (emit[prefix]) continue;
+		if (resolution[prefix]) {
+			emit[prefix] = resolution[prefix];
+		} else {
+			warnings?.push({
+				message: `Prefix "${prefix}" is not declared in the project and is not a standard prefix — the ShEx output will not parse until it is declared`,
+			});
+		}
+	}
+	for (const [prefix, uri] of Object.entries(emit)) {
 		lines.push(`PREFIX ${prefix}: <${uri}>`);
 	}
 
@@ -183,6 +267,7 @@ export function buildShExC(project: TapirProject): string {
 
 	for (const desc of descriptions) {
 		lines.push('');
+		warnIfIllegalIriName(desc.name, warnings);
 
 		const statements = desc.statements || [];
 		const hasType = !!desc.targetClass;
@@ -199,7 +284,7 @@ export function buildShExC(project: TapirProject): string {
 
 		// rdf:type constraint from targetClass
 		if (hasType) {
-			tripleConstraints.push(`  a [${desc.targetClass}]`);
+			tripleConstraints.push(`  a [${formatIriToken(desc.targetClass)}]`);
 		}
 
 		// Statement triple constraints
@@ -209,7 +294,9 @@ export function buildShExC(project: TapirProject): string {
 			const nodeConstraint = formatNodeConstraint(stmt);
 			const cardinality = formatCardinality(stmt.min, stmt.max);
 
-			tripleConstraints.push(`  ${stmt.propertyId} ${nodeConstraint}${cardinality}`);
+			tripleConstraints.push(
+				`  ${formatIriToken(stmt.propertyId)} ${nodeConstraint}${cardinality}`
+			);
 		}
 
 		// Join with semicolons (ShEx TripleExpression separator)
