@@ -17,12 +17,18 @@
  *   - `shex.shex`       — ShEx shapes
  *   - `owldsp.ttl`      — OWL-DSP (Turtle)
  *   - `diagram.svg`     — Overview diagram (if provided)
+ *   - `diagram.pdf`     — Overview diagram as vector PDF (if the SVG converts)
+ *
+ * Optional artifacts that fail to generate are dropped from the ZIP
+ * with a `GeneratorWarning`, and the bundled README lists only the
+ * files actually included.
  *
  * @module converters/package-generator
  */
 
 import { zipSync, strToU8 } from 'fflate';
 import type { TapirProject, Description, Statement } from '$lib/types';
+import type { GeneratorWarning } from '$lib/types/export';
 import { getFlavorLabels } from '$lib/types';
 import { generateHtmlReport } from './report-generator';
 import { buildYamaYaml } from './yaml-generator';
@@ -180,10 +186,11 @@ function generateMarkdownReport(project: TapirProject): string {
  * Serializes DCTAP rows to CSV string.
  *
  * @param project - The Tapir project.
+ * @param warnings - Optional accumulator for lossy-mapping warnings.
  * @returns CSV string with header row.
  */
-function buildDctapCsv(project: TapirProject): string {
-	const rows = buildDctapRows(project);
+function buildDctapCsv(project: TapirProject, warnings?: GeneratorWarning[]): string {
+	const rows = buildDctapRows(project, { warnings });
 	const header = DCTAP_COLUMNS.join(',');
 	const body = rows
 		.map((row) =>
@@ -202,15 +209,50 @@ function buildDctapCsv(project: TapirProject): string {
 // ── README ──────────────────────────────────────────────────────
 
 /**
+ * README table rows for every artifact the package can contain, in
+ * canonical order. `generatePackageReadme` filters this list down to
+ * the files actually present in the ZIP.
+ */
+const ARTIFACT_ROWS: ReadonlyArray<{ file: string; format: string; description: string }> = [
+	{ file: 'index.html', format: 'HTML', description: 'Profile documentation with embedded diagram' },
+	{ file: 'profile.md', format: 'Markdown', description: 'Profile documentation' },
+	{ file: 'profile.yaml', format: 'YAMAML', description: 'Source profile ([spec](https://www.yamaml.org))' },
+	{ file: 'profile.json', format: 'JSON', description: 'JSON representation' },
+	{ file: 'simpledsp.tsv', format: 'SimpleDSP', description: 'Tab-separated schema definition' },
+	{ file: 'simpledsp-jp.tsv', format: 'SimpleDSP', description: 'Japanese headers and value types' },
+	{ file: 'dctap.csv', format: 'DCTAP', description: 'DC Tabular Application Profile ([spec](https://dcmi.github.io/dctap/))' },
+	{ file: 'shacl.ttl', format: 'SHACL', description: 'Shapes Constraint Language ([spec](https://www.w3.org/TR/shacl/))' },
+	{ file: 'shex.shex', format: 'ShEx', description: 'Shape Expressions ([spec](https://shex.io/))' },
+	{ file: 'owldsp.ttl', format: 'OWL-DSP', description: 'Description Set Profile as OWL ([spec](https://docs.yamaml.org/specs/owl-dsp/))' },
+	{ file: 'diagram.svg', format: 'SVG', description: 'Overview diagram' },
+	{ file: 'diagram.pdf', format: 'PDF', description: 'Overview diagram (vector PDF)' },
+];
+
+/**
  * Generates the README.md content for the profile package.
  *
- * Lists all included files with format descriptions and spec links.
+ * Lists only the artifacts actually included in the ZIP, with format
+ * descriptions and spec links — an artifact whose generator failed
+ * must not appear here. Exported so the file-list logic can be
+ * unit-tested without fabricating generator failures.
  *
  * @param projectName - The project name.
+ * @param includedFiles - Filenames actually present in the ZIP.
  * @returns README markdown string.
+ *
+ * @example
+ * generatePackageReadme('My Profile', ['index.html', 'dctap.csv']);
+ * // README table lists only index.html and dctap.csv
  */
-function generateReadme(projectName: string): string {
+export function generatePackageReadme(
+	projectName: string,
+	includedFiles: readonly string[]
+): string {
 	const date = new Date().toISOString().split('T')[0];
+	const included = new Set(includedFiles);
+	const fileRows = ARTIFACT_ROWS.filter((row) => included.has(row.file))
+		.map((row) => `| \`${row.file}\` | ${row.format} | ${row.description} |`)
+		.join('\n');
 
 	return `# ${projectName}
 
@@ -220,17 +262,7 @@ Application profile package generated with [YAMA](https://www.yamaml.org).
 
 | File | Format | Description |
 |------|--------|-------------|
-| \`index.html\` | HTML | Profile documentation with embedded diagram |
-| \`profile.md\` | Markdown | Profile documentation |
-| \`profile.yaml\` | YAMAML | Source profile ([spec](https://www.yamaml.org)) |
-| \`profile.json\` | JSON | JSON representation |
-| \`simpledsp.tsv\` | SimpleDSP | Tab-separated schema definition |
-| \`simpledsp-jp.tsv\` | SimpleDSP | Japanese headers and value types |
-| \`dctap.csv\` | DCTAP | DC Tabular Application Profile ([spec](https://dcmi.github.io/dctap/)) |
-| \`shacl.ttl\` | SHACL | Shapes Constraint Language ([spec](https://www.w3.org/TR/shacl/)) |
-| \`shex.shex\` | ShEx | Shape Expressions ([spec](https://shex.io/)) |
-| \`owldsp.ttl\` | OWL-DSP | Description Set Profile as OWL ([spec](https://docs.yamaml.org/specs/owl-dsp/)) |
-| \`diagram.svg\` | SVG | Overview diagram |
+${fileRows}
 
 For Data Package output, use the CLI: \`yama package -i profile.yaml -o dist/\`
 
@@ -246,53 +278,67 @@ ${date} with [YAMA](https://www.yamaml.org)
  * Generates a ZIP file containing all profile artifacts.
  *
  * Calls each converter to produce text content, then bundles
- * everything into a ZIP using fflate.
+ * everything into a ZIP using fflate. When an optional artifact
+ * (SHACL, OWL-DSP, diagram PDF) fails to generate, it is dropped
+ * from the archive, a warning naming the artifact is pushed to the
+ * accumulator, and the bundled README lists only the files actually
+ * included.
  *
  * @param project - The Tapir project to export.
  * @param svgDiagram - Optional SVG diagram string.
+ * @param warnings - Optional accumulator for lossy-mapping and
+ *   skipped-artifact warnings (same contract as the other generators).
  * @returns ZIP file as a Uint8Array.
  *
  * @example
- * const zip = await generatePackageZip(project, svgString);
+ * const warnings: GeneratorWarning[] = [];
+ * const zip = await generatePackageZip(project, svgString, warnings);
  * downloadBlob(new Blob([zip]), 'profile.zip');
  */
 export async function generatePackageZip(
 	project: TapirProject,
-	svgDiagram?: string
+	svgDiagram?: string,
+	warnings?: GeneratorWarning[]
 ): Promise<Uint8Array> {
 	const projectName = project.name || 'Profile';
 
-	// Generate all text artifacts
+	// Generate all text artifacts, threading the caller's warning
+	// accumulator through every generator that supports one.
 	const htmlContent = generateHtmlReport(project, svgDiagram);
 	const mdContent = generateMarkdownReport(project);
-	const readmeContent = generateReadme(projectName);
 	const yamlContent = buildYamaYaml(project);
 	const jsonContent = buildYamaJson(project);
-	const simpleDspContent = buildSimpleDsp(project, { lang: 'en' });
-	const simpleDspJpContent = buildSimpleDsp(project, { lang: 'jp' });
-	const dctapContent = buildDctapCsv(project);
-	const shexContent = buildShExC(project);
+	const simpleDspContent = buildSimpleDsp(project, { lang: 'en', warnings });
+	const simpleDspJpContent = buildSimpleDsp(project, { lang: 'jp', warnings });
+	const dctapContent = buildDctapCsv(project, warnings);
+	const shexContent = buildShExC(project, warnings);
 
-	// SHACL and OWL-DSP are async (N3 serialization)
+	// SHACL and OWL-DSP are async (N3 serialization). A failure must
+	// not sink the whole package, but it must not be silent either:
+	// the artifact is dropped, a warning names it, and the README
+	// below lists only what actually made it into the archive.
 	let shaclContent = '';
 	try {
-		shaclContent = await buildShacl(project, 'turtle');
+		shaclContent = await buildShacl(project, 'turtle', warnings);
 	} catch {
-		// SHACL generation may fail for some profiles — skip gracefully
+		warnings?.push({
+			message: 'shacl.ttl could not be generated and was left out of the package',
+		});
 	}
 
 	let owlDspContent = '';
 	try {
-		owlDspContent = await buildOwlDsp(project, 'turtle');
+		owlDspContent = await buildOwlDsp(project, 'turtle', warnings);
 	} catch {
-		// OWL-DSP generation may fail for some profiles — skip gracefully
+		warnings?.push({
+			message: 'owldsp.ttl could not be generated and was left out of the package',
+		});
 	}
 
 	// Build file map
 	const files: Record<string, Uint8Array> = {
 		'index.html': strToU8(htmlContent),
 		'profile.md': strToU8(mdContent),
-		'README.md': strToU8(readmeContent),
 		'profile.yaml': strToU8(yamlContent),
 		'profile.json': strToU8(jsonContent),
 		'simpledsp.tsv': strToU8(simpleDspContent),
@@ -323,11 +369,18 @@ export async function generatePackageZip(
 			const pdfBytes = new Uint8Array(await pdfBlob.arrayBuffer());
 			files['diagram.pdf'] = pdfBytes;
 		} catch {
-			// If PDF generation fails (e.g. in a headless test that
-			// lacks a full DOM), fall back silently — the SVG is
-			// already in the package, so the archive is still useful.
+			// PDF generation can fail (e.g. in a headless environment
+			// without full DOM text metrics). The SVG is already in the
+			// package, so the archive is still useful — but say so.
+			warnings?.push({
+				message:
+					'diagram.pdf could not be generated and was left out of the package (diagram.svg is still included)',
+			});
 		}
 	}
+
+	// README reflects exactly what made it into the archive.
+	files['README.md'] = strToU8(generatePackageReadme(projectName, Object.keys(files)));
 
 	return zipSync(files);
 }

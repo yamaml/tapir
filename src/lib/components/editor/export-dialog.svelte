@@ -407,7 +407,7 @@
 					// alongside, they can export it separately and add it
 					// to the archive themselves.
 					const pkgSvg = await buildExportSvg(project, DEFAULT_DIAGRAM_SETTINGS);
-					const zipData = await generatePackageZip(project, pkgSvg);
+					const zipData = await generatePackageZip(project, pkgSvg, warnings);
 					const zipBlob = new Blob([new Uint8Array(zipData) as BlobPart], { type: 'application/zip' });
 					emitted = `${name}-package.zip`;
 					downloadBlob(zipBlob, emitted);
