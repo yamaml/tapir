@@ -8,6 +8,7 @@ import {
 import { parseSimpleDsp } from '$lib/converters/simpledsp-parser';
 import { createProject, createDescription, createStatement } from '$lib/types/profile';
 import type { TapirProject } from '$lib/types';
+import type { GeneratorWarning } from '$lib/types/export';
 
 // ── Helpers ─────────────────────────────────────────────────────
 
@@ -346,6 +347,54 @@ describe('buildSimpleDsp', () => {
 		const text = buildSimpleDsp(project);
 		const line = text.split('\n').find((l) => l.startsWith('Rec'));
 		expect(line).toContain('推奨');
+	});
+
+	it('exports unspecified cardinality as the spec pair 0/- with a warning', () => {
+		// SimpleDSP §4.3/§4.4 define closed value sets for Min/Max with no
+		// empty-cell form, so Tapir's tri-state "unspecified" (undefined)
+		// cannot round-trip: it exports as 0/- (the spec's "no constraint"
+		// pattern, matching yama-cli) and parses back as min 0 / max null.
+		const project = makeProject();
+		project.descriptions = [
+			createDescription({
+				name: 'X',
+				statements: [createStatement({ label: 'Loose', propertyId: 'ex:loose' })],
+			}),
+		];
+
+		const warnings: GeneratorWarning[] = [];
+		const text = buildSimpleDsp(project, { warnings });
+		const line = text.split('\n').find((l) => l.startsWith('Loose'));
+		expect(line).toContain('\t0\t-\t');
+		expect(warnings.some((w) => w.message.includes('unspecified cardinality'))).toBe(true);
+
+		const parsed = parseSimpleDsp(text);
+		const stmt = parsed.data.descriptions[0].statements[0];
+		expect(stmt.min).toBe(0);
+		expect(stmt.max).toBeNull();
+	});
+
+	it('round-trips explicit max null (unbounded) through "-" without warning', () => {
+		const project = makeProject();
+		project.descriptions = [
+			createDescription({
+				name: 'X',
+				statements: [
+					createStatement({ label: 'Multi', propertyId: 'ex:multi', min: 1, max: null }),
+				],
+			}),
+		];
+
+		const warnings: GeneratorWarning[] = [];
+		const text = buildSimpleDsp(project, { warnings });
+		const line = text.split('\n').find((l) => l.startsWith('Multi'));
+		expect(line).toContain('\t1\t-\t');
+		expect(warnings).toHaveLength(0);
+
+		const parsed = parseSimpleDsp(text);
+		const stmt = parsed.data.descriptions[0].statements[0];
+		expect(stmt.min).toBe(1);
+		expect(stmt.max).toBeNull();
 	});
 
 	it('generates full output for a realistic project', () => {

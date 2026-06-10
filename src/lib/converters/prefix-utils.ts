@@ -84,7 +84,9 @@ export function collectUsedPrefixes(
 	const used: NamespaceMap = {};
 	for (const [prefix, uri] of Object.entries(candidates)) {
 		for (const iri of iris) {
-			if (iri.startsWith(uri) && iri.length > uri.length) {
+			// Guard `uri`: a malformed declaration with an empty namespace
+			// URI would otherwise prefix-match every IRI.
+			if (uri && iri.startsWith(uri) && iri.length > uri.length) {
 				used[prefix] = uri;
 				break;
 			}

@@ -16,7 +16,7 @@
  * | repeatable          | Statement.max (TRUE→null=unbounded, FALSE→1, empty→unset) |
  * | valueNodeType       | Statement.valueType (iri/literal/bnode) |
  * | valueDataType       | Statement.datatype                  |
- * | valueShape          | Statement.shapeRef                  |
+ * | valueShape          | Statement.shapeRefs                 |
  * | valueConstraint     | Statement.values/pattern/facets     |
  * | valueConstraintType | (determines which field above)      |
  * | note                | Statement.note                      |

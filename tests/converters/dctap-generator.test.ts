@@ -56,6 +56,10 @@ describe('toMandatory', () => {
 	it('returns empty string for null', () => {
 		expect(toMandatory(null)).toBe('');
 	});
+
+	it('returns empty string when unset (undefined)', () => {
+		expect(toMandatory(undefined)).toBe('');
+	});
 });
 
 // ── toRepeatable ────────────────────────────────────────────────

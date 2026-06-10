@@ -295,13 +295,29 @@ export function buildSimpleDsp(
 			const stmtName = sanitiseCell(resolveStatementName(stmt), ctx, warnings);
 			const property = stmt.propertyId || '';
 
-			// Cardinality
+			// Cardinality. SimpleDSP's Min/Max columns take only the values
+			// listed in spec §4.3/§4.4 (0/n/keyword and 1/n/-); an empty
+			// cell is not among them (unlike ValueType §4.5, where the spec
+			// explicitly allows it). Unspecified cardinality (undefined)
+			// therefore exports as the spec's "no constraint" pair `0`/`-`,
+			// matching yama-cli. The unspecified-vs-explicit distinction is
+			// lost on round-trip, so warn. Keyword rows are exempt: §4.3
+			// itself directs Max to `-` when a keyword occupies Min.
 			const min = stmt.cardinalityNote
 				? sanitiseCell(stmt.cardinalityNote, ctx, warnings)
 				: stmt.min != null
 					? String(stmt.min)
 					: '0';
 			const max = stmt.max != null ? String(stmt.max) : '-';
+			if (!stmt.cardinalityNote && (stmt.min === undefined || stmt.max === undefined)) {
+				const filled = [
+					...(stmt.min === undefined ? ['Min "0"'] : []),
+					...(stmt.max === undefined ? ['Max "-"'] : []),
+				].join(' and ');
+				warnings?.push({
+					message: `${ctx} has unspecified cardinality — exported as ${filled} (SimpleDSP §4.3/§4.4 allow no empty Min/Max cells)`,
+				});
+			}
 
 			const valueTypeEn = resolveSimpleDspValueType(stmt);
 			const valueType = isJp ? (VALUE_TYPE_JP[valueTypeEn] ?? valueTypeEn) : valueTypeEn;
