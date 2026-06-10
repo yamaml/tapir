@@ -28,7 +28,7 @@
  * @see https://dcmi.github.io/dctap/
  */
 
-import type { TapirProject, Statement } from '$lib/types';
+import type { TapirProject, Description, Statement } from '$lib/types';
 import type { GeneratorWarning } from '$lib/types/export';
 
 // ── Constants ───────────────────────────────────────────────────
@@ -229,6 +229,34 @@ function normaliseFacetName(lower: string): string {
 	}
 }
 
+/**
+ * Decides whether a description needs a dedicated shape header row
+ * (shapeID/shapeLabel/note, no propertyID) in the DCTAP output.
+ *
+ * True when the description has a `note` — which has no other home in
+ * DCTAP — or when it has no emittable statement rows at all. This is
+ * the single source of truth shared by `buildDctapRows` and the raw
+ * table's `buildDctapLines` (utils/dctap-lines), which must walk the
+ * generator's row order in lockstep.
+ *
+ * @param desc - The description to check.
+ * @param includeEmptyStatements - Whether statements with an empty
+ *   `propertyId` count as emittable rows (the raw table passes true).
+ * @returns True when a dedicated shape header row is emitted.
+ *
+ * @example
+ * dctapShapeNeedsHeaderRow({ ...desc, note: 'x' }, false); // => true
+ */
+export function dctapShapeNeedsHeaderRow(
+	desc: Description,
+	includeEmptyStatements: boolean
+): boolean {
+	const emittable = (desc.statements || []).filter(
+		(stmt) => stmt.propertyId || includeEmptyStatements
+	);
+	return emittable.length === 0 || !!desc.note;
+}
+
 // ── Main Generator ──────────────────────────────────────────────
 
 /** An all-empty DCTAP row, used as the base for header rows. */
@@ -292,7 +320,7 @@ export function buildDctapRows(
 		// Dedicated shape header row: carries the description's note
 		// (statement rows' note column belongs to the statements), and
 		// guarantees the shape appears even with no statement rows.
-		const needsHeaderRow = statements.length === 0 || !!desc.note;
+		const needsHeaderRow = dctapShapeNeedsHeaderRow(desc, includeEmpty);
 		if (needsHeaderRow) {
 			rows.push({
 				...emptyRow(),

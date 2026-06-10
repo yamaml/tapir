@@ -13,7 +13,11 @@
  */
 
 import type { TapirProject } from '$lib/types';
-import { buildDctapRows, DCTAP_COLUMNS } from '$lib/converters/dctap-generator';
+import {
+	buildDctapRows,
+	dctapShapeNeedsHeaderRow,
+	DCTAP_COLUMNS,
+} from '$lib/converters/dctap-generator';
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -58,9 +62,10 @@ export function buildDctapLines(project: TapirProject): DctapLine[] {
 	for (let di = 0; di < descriptions.length; di++) {
 		const desc = descriptions[di];
 		const stmts = desc.statements || [];
-		// Same predicate as the generator: header row when the shape has
-		// a note (which has no other home in DCTAP) or no statement rows.
-		const hasHeaderRow = stmts.length === 0 || !!desc.note;
+		// Shared predicate with the generator: header row when the shape
+		// has a note (which has no other home in DCTAP) or no statement
+		// rows. `true` mirrors `includeEmptyStatements: true` above.
+		const hasHeaderRow = dctapShapeNeedsHeaderRow(desc, true);
 
 		if (hasHeaderRow) {
 			lines.push({

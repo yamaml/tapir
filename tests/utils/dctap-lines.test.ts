@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildDctapLines } from '$lib/utils/dctap-lines';
+import { buildDctapRows, dctapShapeNeedsHeaderRow } from '$lib/converters/dctap-generator';
 import { createProject, createDescription, createStatement } from '$lib/types';
 
 // ── Fixtures ────────────────────────────────────────────────────
@@ -86,4 +87,58 @@ describe('buildDctapLines', () => {
 		expect(lines[3].cells[0]).toBe('B');
 		expect(lines[3].cells[2]).toBe('ex:p2');
 	});
+});
+
+// ── Header-row predicate parity ─────────────────────────────────
+//
+// `buildDctapRows` and `buildDctapLines` must agree on when a shape
+// gets a dedicated header row — a drift of one shifts every later
+// raw-table line off its statement. Both now call
+// `dctapShapeNeedsHeaderRow`; these tests pin the agreement for the
+// three structurally distinct shapes.
+
+describe('dctapShapeNeedsHeaderRow parity', () => {
+	const cases: Array<{
+		title: string;
+		desc: Parameters<typeof createDescription>[0];
+	}> = [
+		{
+			title: 'shape with a note',
+			desc: {
+				name: 'Noted',
+				note: 'has a note',
+				statements: [createStatement({ propertyId: 'ex:p' })],
+			},
+		},
+		{
+			title: 'empty shape (no statements)',
+			desc: { name: 'Empty' },
+		},
+		{
+			title: 'normal shape (statements, no note)',
+			desc: {
+				name: 'Normal',
+				statements: [createStatement({ propertyId: 'dcterms:title' })],
+			},
+		},
+	];
+
+	for (const { title, desc } of cases) {
+		it(`generator rows and raw-table lines agree for a ${title}`, () => {
+			const p = project([desc]);
+			const expected = dctapShapeNeedsHeaderRow(p.descriptions[0], true);
+
+			// Generator path: a header row is a shape-carrying row with
+			// no propertyID, emitted before any statement rows.
+			const rows = buildDctapRows(p, { includeEmptyStatements: true });
+			const generatorHasHeader = rows[0].shapeID !== '' && rows[0].propertyID === '';
+
+			// Raw-table path: the first line is tagged 'header'.
+			const lines = buildDctapLines(p);
+			const linesHaveHeader = lines[0].kind === 'header';
+
+			expect(generatorHasHeader).toBe(expected);
+			expect(linesHaveHeader).toBe(expected);
+		});
+	}
 });
