@@ -34,6 +34,29 @@ export interface ImportResult {
 	format: string;
 }
 
+// ── Encoding Guard ──────────────────────────────────────────────
+
+/**
+ * Detects mojibake in decoded text. Files are decoded as UTF-8; a
+ * Shift-JIS (or other legacy-encoded) SimpleDSP file decodes with
+ * U+FFFD replacement characters instead of failing. Surfacing a
+ * warning lets the user re-save the file as UTF-8 instead of silently
+ * importing garbled labels.
+ *
+ * @param text - The decoded file content.
+ * @returns A warning list (empty when the text decoded cleanly).
+ */
+function encodingWarnings(text: string): ParseMessage[] {
+	if (!text.includes('�')) return [];
+	return [
+		{
+			message:
+				'The file contains characters that could not be decoded as UTF-8 (shown as �). ' +
+				'It may be saved in a legacy encoding such as Shift-JIS — re-save it as UTF-8 and import again.',
+		},
+	];
+}
+
 // ── CSV/TSV Parsing ─────────────────────────────────────────────
 
 /** DCTAP column headers used for auto-detection. */
@@ -205,7 +228,7 @@ async function importYaml(file: File, projectName: string): Promise<ImportResult
 	const result = parseYamaYaml(text, projectName);
 	return {
 		project: result.data,
-		warnings: result.warnings,
+		warnings: [...encodingWarnings(text), ...result.warnings],
 		errors: result.errors,
 		format: 'yaml',
 	};
@@ -216,7 +239,7 @@ async function importSimpleDspTsv(file: File, projectName: string): Promise<Impo
 	const result = parseSimpleDsp(text, projectName);
 	return {
 		project: result.data,
-		warnings: result.warnings,
+		warnings: [...encodingWarnings(text), ...result.warnings],
 		errors: result.errors,
 		format: 'simpledsp',
 	};
@@ -224,6 +247,7 @@ async function importSimpleDspTsv(file: File, projectName: string): Promise<Impo
 
 async function importCsv(file: File, projectName: string): Promise<ImportResult> {
 	const raw = await readFile(file);
+	const mojibake = encodingWarnings(raw);
 	// Strip a UTF-8 BOM before sniffing the first line; the parsers
 	// handle the BOM themselves, but format detection must not see it.
 	const text = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;
@@ -236,7 +260,7 @@ async function importCsv(file: File, projectName: string): Promise<ImportResult>
 			const result = parseSimpleDsp(text, projectName);
 			return {
 				project: result.data,
-				warnings: result.warnings,
+				warnings: [...mojibake, ...result.warnings],
 				errors: result.errors,
 				format: 'simpledsp',
 			};
@@ -252,7 +276,7 @@ async function importCsv(file: File, projectName: string): Promise<ImportResult>
 		const result = dctapRowsToTapir(dctapRows, projectName);
 		return {
 			project: result.data,
-			warnings: result.warnings,
+			warnings: [...mojibake, ...result.warnings],
 			errors: result.errors,
 			format: 'dctap',
 		};
@@ -262,7 +286,7 @@ async function importCsv(file: File, projectName: string): Promise<ImportResult>
 	const result = parseSimpleDsp(text, projectName);
 	return {
 		project: result.data,
-		warnings: result.warnings,
+		warnings: [...mojibake, ...result.warnings],
 		errors: result.errors,
 		format: 'simpledsp-csv',
 	};

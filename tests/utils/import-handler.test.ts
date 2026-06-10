@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
 	parseCsvRows,
 	isDctapFormat,
+	importFile,
 } from '$lib/components/editor/import-handler';
 
 // ── parseCsvRows ────────────────────────────────────────────────
@@ -82,5 +83,33 @@ describe('isDctapFormat', () => {
 	it('requires both shapeID and propertyID', () => {
 		expect(isDctapFormat(['shapeID', 'note'])).toBe(false);
 		expect(isDctapFormat(['propertyID', 'note'])).toBe(false);
+	});
+});
+
+// ── Mojibake guard ──────────────────────────────────────────────
+
+describe('importFile — encoding guard', () => {
+	it('warns when the decoded text contains U+FFFD (mojibake)', async () => {
+		// A Shift-JIS byte sequence decoded as UTF-8 produces U+FFFD
+		// replacement characters; 0x83 0x5C is Shift-JIS 'ソ'.
+		const bytes = new Uint8Array([
+			...new TextEncoder().encode('[MAIN]\nID\t'),
+			0x83, 0x5c,
+			...new TextEncoder().encode(':Title\t1\t1\tID\t\t\n'),
+		]);
+		const file = new File([bytes], 'legacy.tsv', { type: 'text/tab-separated-values' });
+		const result = await importFile(file);
+		expect(
+			result.warnings.some((w) => w.message.includes('UTF-8')),
+		).toBe(true);
+	});
+
+	it('does not warn for clean UTF-8 input', async () => {
+		const tsv = '[MAIN]\n#Name\tProperty\tMin\tMax\tValueType\tConstraint\tComment\nID\tfoaf:Person\t1\t1\tID\t\t\n';
+		const file = new File([tsv], 'clean.tsv', { type: 'text/tab-separated-values' });
+		const result = await importFile(file);
+		expect(
+			result.warnings.some((w) => w.message.includes('UTF-8')),
+		).toBe(false);
 	});
 });

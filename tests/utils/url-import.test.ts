@@ -213,3 +213,54 @@ describe('loadProfileFromUrl — fetch errors', () => {
 		expect(text).toBe('hello\n');
 	});
 });
+
+describe('loadProfileFromUrl — guards', () => {
+	beforeEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('aborts a hung request and maps it to timeout', async () => {
+		vi.spyOn(globalThis, 'fetch').mockImplementationOnce(
+			(_input, init) =>
+				new Promise<Response>((_resolve, reject) => {
+					init?.signal?.addEventListener('abort', () =>
+						reject(new DOMException('The operation was aborted.', 'AbortError')),
+					);
+				}),
+		);
+		await expect(
+			loadProfileFromUrl('https://example.org/slow.yaml', { timeoutMs: 20 }),
+		).rejects.toMatchObject({ kind: 'timeout' });
+	});
+
+	it('refuses a response whose declared Content-Length exceeds the cap', async () => {
+		vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+			new Response('tiny', {
+				status: 200,
+				headers: { 'Content-Length': String(100 * 1024 * 1024) },
+			}),
+		);
+		await expect(
+			loadProfileFromUrl('https://example.org/huge.csv'),
+		).rejects.toMatchObject({ kind: 'too-large' });
+	});
+
+	it('refuses a downloaded body larger than the cap (no Content-Length)', async () => {
+		vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+			new Response('x'.repeat(64), { status: 200 }),
+		);
+		await expect(
+			loadProfileFromUrl('https://example.org/big.yaml', { maxBytes: 16 }),
+		).rejects.toMatchObject({ kind: 'too-large' });
+	});
+
+	it('accepts a body under the cap', async () => {
+		vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+			new Response('small enough', { status: 200 }),
+		);
+		const file = await loadProfileFromUrl('https://example.org/ok.yaml', {
+			maxBytes: 1024,
+		});
+		expect(await file.text()).toBe('small enough');
+	});
+});

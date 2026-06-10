@@ -56,6 +56,13 @@
 	// Once the user edits the name field, this flips false and imports stop
 	// overwriting it. See handleNameInput.
 	let nameAutoDerived = $state(true);
+	/**
+	 * Error from the last Create attempt. Covers the duplicate-name
+	 * race (the reactive `nameDuplicate` check uses the cached list,
+	 * which can be stale if another tab created a project) and any
+	 * unexpected save failure — both previously failed silently.
+	 */
+	let createError = $state<string | null>(null);
 	let selectedFlavor = $state<Flavor>('simpledsp');
 	let baseIri = $state('');
 	let creating = $state(false);
@@ -284,6 +291,10 @@
 		'http-error':
 			'The server returned an error. Check the URL and try again.',
 		'empty-response': 'The URL loaded but returned an empty file.',
+		timeout:
+			'The server took too long to respond. Try again, or download the file and use the File tab instead.',
+		'too-large':
+			'The file is too large to import (50 MB limit). Profiles are small text files — check the URL.',
 	};
 
 	async function handleUrlLoad(): Promise<void> {
@@ -432,12 +443,17 @@
 	async function handleCreate() {
 		if (!canCreate) return;
 		creating = true;
+		createError = null;
 		try {
 			// Re-check against IndexedDB in case the cached list is stale
 			// (e.g. another browser tab created a project with this name
 			// since the dialog opened). The reactive `nameDuplicate` flag
 			// catches the common case; this catches the race.
 			if (await projectNameExists(projectName.trim())) {
+				createError = `A project named “${projectName.trim()}” already exists. Pick a different name.`;
+				// Refresh the cached list so the inline duplicate check
+				// also reflects the project created by the other tab.
+				await refreshProjectsList();
 				creating = false;
 				return;
 			}
@@ -470,6 +486,7 @@
 			goto(`${base}/editor/${project.id}`);
 		} catch (err) {
 			console.error('[new-project-dialog] handleCreate failed:', err);
+			createError = 'Creating the project failed. Try again.';
 			creating = false;
 		}
 	}
@@ -499,6 +516,7 @@
 	/** Marks the name as user-authored so imports stop overwriting it. */
 	function handleNameInput() {
 		nameAutoDerived = false;
+		createError = null;
 	}
 
 	/**
@@ -569,6 +587,8 @@
 					<p class="text-xs text-destructive">
 						A project named <span class="font-semibold">“{projectName.trim()}”</span> already exists. Pick a different name.
 					</p>
+				{:else if createError}
+					<p class="text-xs text-destructive">{createError}</p>
 				{/if}
 			</div>
 
@@ -933,6 +953,7 @@
 							autocomplete="off"
 							role="combobox"
 							aria-expanded={showPrefixSuggestions}
+							aria-controls="npd-prefix-listbox"
 							aria-autocomplete="list"
 							class="w-full h-8 px-2 text-xs font-mono bg-background border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-ring"
 						/>
@@ -943,6 +964,7 @@
 								 Items preview the matched URI so users see
 								 which vocabulary they're picking. -->
 							<ul
+								id="npd-prefix-listbox"
 								role="listbox"
 								class="absolute left-0 top-full z-50 mt-1 max-h-60 w-[28rem] overflow-y-auto rounded-md border border-border bg-popover shadow-md py-1 text-xs"
 							>

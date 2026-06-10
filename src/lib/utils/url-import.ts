@@ -17,7 +17,9 @@ export type UrlImportErrorKind =
 	| 'unsupported-scheme'
 	| 'cors-or-network'
 	| 'http-error'
-	| 'empty-response';
+	| 'empty-response'
+	| 'timeout'
+	| 'too-large';
 
 /** Error thrown by `loadProfileFromUrl`. */
 export class UrlImportError extends Error {
@@ -106,17 +108,36 @@ export function rewriteForgeBlobUrl(input: string): {
 
 // ── Loading ─────────────────────────────────────────────────────
 
+/** Default fetch timeout — generous for slow hosts, finite for dead ones. */
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+/** Default response size cap. Profiles are text files; 50 MB is far
+ *  beyond any plausible profile and protects against accidentally
+ *  pasted dataset/binary URLs filling browser memory. */
+const DEFAULT_MAX_BYTES = 50 * 1024 * 1024;
+
+/** Tuning knobs for `loadProfileFromUrl` (injectable for tests). */
+export interface UrlImportOptions {
+	/** Abort the fetch after this many milliseconds. */
+	timeoutMs?: number;
+	/** Refuse responses larger than this many bytes. */
+	maxBytes?: number;
+}
+
 /**
  * Fetches a profile URL and returns it as a `File` ready for the
  * existing `importFile()` pipeline. Validates the input URL, rewrites
  * known forge blob URLs, and surfaces failures as `UrlImportError`
  * with a discriminated `kind` so the caller can render specific
- * messages.
+ * messages. The request aborts after `timeoutMs` and responses
+ * larger than `maxBytes` (declared via Content-Length or measured
+ * after download) are refused.
  *
  * Uses `mode: 'cors'` and no custom headers — non-simple headers
  * trigger CORS preflight, which most arbitrary hosts don't allow.
  *
  * @param input - The user-pasted URL string.
+ * @param options - Optional timeout/size overrides.
  * @returns A `File` whose name is derived from the URL path.
  * @throws {UrlImportError}
  *
@@ -126,7 +147,13 @@ export function rewriteForgeBlobUrl(input: string): {
  * );
  * // file.name === 'x.yaml'
  */
-export async function loadProfileFromUrl(input: string): Promise<File> {
+export async function loadProfileFromUrl(
+	input: string,
+	options: UrlImportOptions = {},
+): Promise<File> {
+	const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+	const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
+
 	let url: URL;
 	try {
 		url = new URL(input);
@@ -143,41 +170,85 @@ export async function loadProfileFromUrl(input: string): Promise<File> {
 
 	const { rewritten } = rewriteForgeBlobUrl(input);
 
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), timeoutMs);
+
 	let response: Response;
+	let buffer: ArrayBuffer;
 	try {
-		response = await fetch(rewritten, {
-			mode: 'cors',
-			redirect: 'follow',
-			cache: 'default',
-			referrerPolicy: 'no-referrer',
-		});
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new UrlImportError(
-			'cors-or-network',
-			`Network or CORS failure: ${message}`,
-		);
+		try {
+			response = await fetch(rewritten, {
+				mode: 'cors',
+				redirect: 'follow',
+				cache: 'default',
+				referrerPolicy: 'no-referrer',
+				signal: controller.signal,
+			});
+		} catch (err) {
+			if (controller.signal.aborted) {
+				throw new UrlImportError(
+					'timeout',
+					`The request did not finish within ${Math.round(timeoutMs / 1000)} seconds.`,
+				);
+			}
+			const message = err instanceof Error ? err.message : String(err);
+			throw new UrlImportError(
+				'cors-or-network',
+				`Network or CORS failure: ${message}`,
+			);
+		}
+
+		if (!response.ok) {
+			throw new UrlImportError(
+				'http-error',
+				`${response.status} ${response.statusText}`,
+			);
+		}
+
+		// Fast reject on a declared size before downloading the body.
+		const declared = Number(response.headers.get('Content-Length') ?? '');
+		if (Number.isFinite(declared) && declared > maxBytes) {
+			controller.abort();
+			throw new UrlImportError(
+				'too-large',
+				`The file is ${Math.round(declared / 1024 / 1024)} MB — larger than the ${Math.round(maxBytes / 1024 / 1024)} MB import limit.`,
+			);
+		}
+
+		// Read as ArrayBuffer rather than wrapping a Blob inside the File.
+		// `new File([blob], …)` is valid in real browsers but jsdom (used by
+		// our tests) serialises the inner Blob as `[object Blob]` when text
+		// is read back, so unit tests can't verify content. ArrayBuffer
+		// works in both environments and the resulting File reads correctly
+		// via FileReader (used by the existing import pipeline) and via
+		// `text()` / `arrayBuffer()`.
+		try {
+			buffer = await response.arrayBuffer();
+		} catch (err) {
+			if (controller.signal.aborted) {
+				throw new UrlImportError(
+					'timeout',
+					`The request did not finish within ${Math.round(timeoutMs / 1000)} seconds.`,
+				);
+			}
+			throw err;
+		}
+	} finally {
+		clearTimeout(timer);
 	}
 
-	if (!response.ok) {
-		throw new UrlImportError(
-			'http-error',
-			`${response.status} ${response.statusText}`,
-		);
-	}
-
-	// Read as ArrayBuffer rather than wrapping a Blob inside the File.
-	// `new File([blob], …)` is valid in real browsers but jsdom (used by
-	// our tests) serialises the inner Blob as `[object Blob]` when text
-	// is read back, so unit tests can't verify content. ArrayBuffer
-	// works in both environments and the resulting File reads correctly
-	// via FileReader (used by the existing import pipeline) and via
-	// `text()` / `arrayBuffer()`.
-	const buffer = await response.arrayBuffer();
 	if (buffer.byteLength === 0) {
 		throw new UrlImportError(
 			'empty-response',
 			'The URL returned an empty response.',
+		);
+	}
+	// Re-check the actual size — Content-Length is optional (chunked
+	// responses) and can lie.
+	if (buffer.byteLength > maxBytes) {
+		throw new UrlImportError(
+			'too-large',
+			`The file is ${Math.round(buffer.byteLength / 1024 / 1024)} MB — larger than the ${Math.round(maxBytes / 1024 / 1024)} MB import limit.`,
 		);
 	}
 
