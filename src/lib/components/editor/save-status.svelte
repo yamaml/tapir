@@ -10,6 +10,7 @@
 	import { currentProject, setProjectName, setProjectDescription } from '$lib/stores';
 	import { projectNameExists } from '$lib/db';
 	import { Badge } from '$lib/components/ui/badge';
+	import { focusOnMount } from '$lib/utils/focus-on-mount';
 	import Pencil from 'lucide-svelte/icons/pencil';
 	import Tip from '$lib/components/ui/tip.svelte';
 
@@ -104,7 +105,7 @@
 					oninput={() => (nameError = '')}
 					aria-invalid={nameError ? 'true' : undefined}
 					class="text-sm font-medium text-foreground bg-background border rounded px-1 h-6 focus:outline-none focus:ring-1 {nameError ? 'border-destructive focus:ring-destructive' : 'border-ring focus:ring-ring'}"
-					autofocus
+					use:focusOnMount
 				/>
 				{#if nameError}
 					<p class="text-[10px] text-destructive leading-tight">{nameError}</p>
@@ -136,7 +137,7 @@
 				onblur={commitDescription}
 				placeholder="A short description for the dashboard…"
 				class="flex-1 text-[11px] text-muted-foreground bg-background border border-ring rounded px-1 h-5 max-w-[480px] focus:outline-none focus:ring-1 focus:ring-ring"
-				autofocus
+				use:focusOnMount
 			/>
 		{:else if projectDescription}
 			<Tip text="Click to edit description">

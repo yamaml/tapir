@@ -1072,10 +1072,19 @@
 				translated by the zoom/pan state so the user can explore
 				dense graphs with the zoom controls or drag-to-pan.
 			-->
+			<!--
+				The pointer handlers implement drag-to-pan/zoom only; the
+				same viewport is reachable through the keyboard-accessible
+				zoom buttons, so the canvas itself stays a non-interactive
+				image for assistive technology.
+			-->
+			<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 			<svg
 				bind:this={svgEl}
 				xmlns="http://www.w3.org/2000/svg"
 				{viewBox}
+				role="img"
+				aria-label="Profile diagram preview"
 				class="h-full w-full {expanded
 					? `select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`
 					: ''}"
@@ -1184,8 +1193,12 @@
 				{#each layoutEdges as edge, edgeIdx (edge.id)}
 					{#each edge.sections as section, si}
 						{@const isHovered = hoveredEdgeId === edge.id}
-						<!-- Invisible wider hit area for hover -->
+						<!-- Invisible wider hit area for hover. The handlers
+							 drive a purely decorative highlight, so the path
+							 stays presentational for assistive technology. -->
+						<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 						<path
+							role="presentation"
 							d={buildEdgePath(section)}
 							fill="none"
 							stroke="transparent"
@@ -1214,7 +1227,10 @@
 						{#if showEdgeLabels}
 							{@const labelPos = edgeLabelPos(section)}
 							{@const lblWidth = edgeLabelWidth(edge)}
+							<!-- Hover-highlight only (decorative) — see the hit-area path above. -->
+							<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 							<g
+								role="presentation"
 								onmouseenter={() => (hoveredEdgeId = edge.id)}
 								onmouseleave={() => (hoveredEdgeId = null)}
 								style="cursor: {expanded ? 'inherit' : 'pointer'};"
@@ -1250,9 +1266,13 @@
 				<!-- Nodes -->
 				{#each layoutNodes as node (node.id)}
 					{@const isHovered = hoveredNodeId === node.id}
+					<!-- Click selects the description in the sidebar, which is
+						 also fully reachable by keyboard through the sidebar
+						 itself — the diagram node is a redundant shortcut. -->
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 					<g
+						role="presentation"
 						onclick={() => handleNodeClick(node.descId)}
 						onmouseenter={() => (hoveredNodeId = node.id)}
 						onmouseleave={() => (hoveredNodeId = null)}

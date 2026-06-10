@@ -14,6 +14,7 @@
 	import { currentProject, setNamespaces } from '$lib/stores';
 	import type { TapirProject, VocabManifestEntry } from '$lib/types';
 	import zazukoPrefixes from '@zazuko/prefixes';
+	import { focusOnMount } from '$lib/utils/focus-on-mount';
 	import AlertTriangle from 'lucide-svelte/icons/triangle-alert';
 	import X from 'lucide-svelte/icons/x';
 	import Check from 'lucide-svelte/icons/check';
@@ -181,7 +182,7 @@
 								onkeydown={handleKeydown}
 								placeholder="http://example.org/ns#"
 								class="h-5 w-56 px-1 text-[11px] font-mono bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-ring"
-								autofocus
+								use:focusOnMount
 							/>
 							<button
 								type="button"

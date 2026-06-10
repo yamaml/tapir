@@ -3,6 +3,7 @@
 	import { setNamespaces, setBase, renamePrefix } from '$lib/stores';
 	import { currentProject } from '$lib/stores';
 	import zazukoPrefixes from '@zazuko/prefixes';
+	import { focusOnMount } from '$lib/utils/focus-on-mount';
 	import Globe from 'lucide-svelte/icons/globe';
 	import Plus from 'lucide-svelte/icons/plus';
 	import Pencil from 'lucide-svelte/icons/pencil';
@@ -330,7 +331,7 @@
 						onkeydown={handleBaseKeydown}
 						placeholder="http://example.org/"
 						class="w-full h-6 px-1.5 text-[10px] font-mono bg-background border border-ring rounded focus:outline-none focus:ring-1 focus:ring-ring"
-						autofocus
+						use:focusOnMount
 					/>
 					<button type="button" onclick={saveBase} class="text-primary hover:text-primary/80 [&_svg]:pointer-events-none">
 						<Check class="h-3 w-3" />
@@ -392,7 +393,7 @@
 								onkeydown={handleEditKeydown}
 								placeholder="e.g. foaf"
 								class="block w-full h-6 px-1.5 text-[11px] font-mono bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-ring"
-								autofocus
+								use:focusOnMount
 							/>
 						</div>
 						<div class="space-y-0.5">
@@ -519,11 +520,13 @@
 					autocomplete="off"
 					role="combobox"
 					aria-expanded={showPrefixSuggestions}
+					aria-controls="ns-prefix-listbox"
 					aria-autocomplete="list"
 					class="w-full h-6 px-1.5 text-[10px] font-mono bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-ring"
 				/>
 				{#if showPrefixSuggestions}
 					<ul
+						id="ns-prefix-listbox"
 						role="listbox"
 						class="absolute left-0 top-full z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-md border border-border bg-popover shadow-md py-1 text-[10px]"
 					>
