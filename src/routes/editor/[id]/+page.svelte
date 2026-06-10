@@ -269,15 +269,22 @@
 	});
 
 	onDestroy(() => {
-		// Auto-snapshot on exit if unsaved
+		// Auto-snapshot on exit if unsaved. Fire-and-forget, but still
+		// prune afterwards (same as createAutoSnapshot) so the
+		// auto-snapshot cap cannot drift up by one per session.
 		if (hasUnsavedChanges && lastPlainProject) {
+			const plain = lastPlainProject;
 			saveSnapshot({
-				projectId: lastPlainProject.id,
+				projectId: plain.id,
 				label: `Auto-save on exit`,
 				timestamp: new Date().toISOString(),
-				data: lastPlainProject,
+				data: plain,
 				auto: true,
-			});
+			})
+				.then(() => pruneAutoSnapshots(plain.id))
+				.catch(() => {
+					// silent — best-effort, matching createAutoSnapshot
+				});
 		}
 		if (idleTimer) clearTimeout(idleTimer);
 		if (handleVisibilityChange) {
