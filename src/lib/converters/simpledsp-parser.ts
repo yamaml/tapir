@@ -31,7 +31,7 @@ import type {
 } from '$lib/types';
 import type { ParseResult, ParseMessage } from '$lib/types/export';
 import { createProject, createDescription, createStatement } from '$lib/types/profile';
-import { STANDARD_PREFIXES } from '$lib/converters/simpledsp-generator';
+import { parseCsv } from '$lib/converters/csv';
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -58,16 +58,25 @@ interface SimpleDspTextResult {
 	namespaces: NamespaceMap;
 }
 
-// ── Japanese Value Type Normalization ───────────────────────────
+// ── Value Type Normalization ────────────────────────────────────
 
-/** Maps Japanese value type labels to their English equivalents. */
-const JP_VALUE_TYPE_MAP: Record<string, string> = {
+/**
+ * Maps recognised value-type labels (lowercased) to their internal
+ * equivalents. Japanese labels come from the original MIC-J spec
+ * (Table 15); `reference` is the OWL-DSP English keyword (YAMAML
+ * §7.5) accepted as an alias for `IRI`.
+ */
+const VALUE_TYPE_ALIASES: Record<string, string> = {
 	'文字列': 'literal',
 	'構造化': 'structured',
 	'参照値(uri)': 'iri',
 	'参照値': 'iri',
 	'制約なし': '',
+	reference: 'iri',
 };
+
+/** Value types the parser recognises after normalisation. */
+const KNOWN_VALUE_TYPES = new Set(['', 'id', 'literal', 'structured', 'iri']);
 
 // ── Text Parser ─────────────────────────────────────────────────
 
@@ -101,8 +110,14 @@ function detectDelimiter(lines: string[]): '\t' | ',' {
  * downstream value parser depends on them. We detect the multi-token
  * case by looking for a `"` that is not part of the doubled `""` escape
  * sequence appearing in the interior of the cell.
+ *
+ * @param cell - The raw TSV cell value.
+ * @param keepBareQuotes - When true (used for the Constraint column),
+ *   a quoted cell with no interior escape evidence (e.g. `"red"`, a
+ *   single-value picklist) keeps its quotes. Only Excel-escaped cells
+ *   (containing `""`) are unwrapped.
  */
-function unquote(cell: string): string {
+function unquote(cell: string, keepBareQuotes = false): string {
 	if (cell.length < 2 || !cell.startsWith('"') || !cell.endsWith('"')) {
 		return cell;
 	}
@@ -110,54 +125,48 @@ function unquote(cell: string): string {
 	// a bare `"` that isn't paired with another `"` (RFC 4180 escape),
 	// treat the cell as multi-token and leave the quotes in place.
 	const inner = cell.slice(1, -1);
+	let hasEscape = false;
 	for (let i = 0; i < inner.length; i++) {
 		if (inner[i] !== '"') continue;
 		if (inner[i + 1] === '"') {
+			hasEscape = true;
 			i++; // consume the escape
 			continue;
 		}
 		return cell; // bare interior quote → not a single quoted token
 	}
+	// Constraint cells: `"red"` (no interior quotes) is a single-value
+	// picklist whose quotes are load-bearing — leave them in place.
+	// Excel-wrapped cells always contain `""` escapes when the content
+	// itself was quoted, so those still unwrap correctly.
+	if (keepBareQuotes && !hasEscape) return cell;
 	return inner.replace(/""/g, '"');
 }
 
-/**
- * Splits a SimpleDSP row into cells, honouring quoted fields for CSV.
- * For TSV we keep the simple `split('\t')` behaviour (with outer-quote
- * stripping for XLSX-exported TSVs); for CSV we do a proper RFC-4180-
- * style split so fields containing commas or newlines (wrapped in
- * double quotes) survive intact.
- */
-function splitRow(line: string, delimiter: '\t' | ','): string[] {
-	if (delimiter === '\t') return line.split('\t').map(unquote);
+/** Positional column index of the Constraint cell in a statement row. */
+const CONSTRAINT_COLUMN = 5;
 
-	const result: string[] = [];
-	let current = '';
-	let inQuotes = false;
-	for (let i = 0; i < line.length; i++) {
-		const ch = line[i];
-		if (inQuotes) {
-			if (ch === '"') {
-				if (i + 1 < line.length && line[i + 1] === '"') {
-					current += '"';
-					i++;
-				} else {
-					inQuotes = false;
-				}
-			} else {
-				current += ch;
-			}
-		} else if (ch === '"') {
-			inQuotes = true;
-		} else if (ch === delimiter) {
-			result.push(current);
-			current = '';
-		} else {
-			current += ch;
-		}
+/**
+ * Splits SimpleDSP text into rows of cells.
+ *
+ * For CSV input, delegates to the shared RFC 4180 parser so quoted
+ * fields containing commas or newlines survive intact. For TSV
+ * (canonical SimpleDSP), rows are line-based and cells are raw —
+ * with outer-quote stripping for XLSX-exported TSVs, except in the
+ * Constraint column where bare quotes mark single-value picklists.
+ */
+function splitRows(text: string, delimiter: '\t' | ','): string[][] {
+	if (delimiter === ',') {
+		return parseCsv(text, { delimiter: ',' });
 	}
-	result.push(current);
-	return result;
+	const input = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+	return input
+		.split(/\r\n|\r|\n/)
+		.map((line) =>
+			line
+				.split('\t')
+				.map((cell, i) => unquote(cell.trim(), i === CONSTRAINT_COLUMN))
+		);
 }
 
 /**
@@ -171,6 +180,10 @@ function splitRow(line: string, delimiter: '\t' | ','): string[] {
  * from the first content line: tab (canonical TSV) is preferred, with
  * comma (CSV) as a fallback so CSV variants also parse correctly.
  *
+ * Per the spec's shorthand (§6.2.6), a document with no block headers
+ * at all is parsed as a single implicit `[MAIN]` block — statement
+ * rows appearing before any `[...]` header open that block.
+ *
  * @param text - The SimpleDSP text content.
  * @returns Parsed blocks and namespace map.
  *
@@ -178,23 +191,22 @@ function splitRow(line: string, delimiter: '\t' | ','): string[] {
  * const { blocks, namespaces } = parseSimpleDspText('[@NS]\nfoaf\thttp://xmlns.com/foaf/0.1/\n\n[MAIN]\n#Name\tProperty\t...\nname\tfoaf:name\t1\t1\tliteral\txsd:string\tFull name');
  */
 export function parseSimpleDspText(text: string): SimpleDspTextResult {
-	const lines = text.split(/\r?\n/);
 	const namespaces: NamespaceMap = {};
 	const blocks: SimpleDspBlock[] = [];
 	let currentBlock: SimpleDspBlock | null = null;
 	let inNsBlock = false;
-	const delimiter = detectDelimiter(lines);
+	const delimiter = detectDelimiter(text.split(/\r?\n/));
 
-	for (const line of lines) {
-		const trimmed = line.trim();
-		if (!trimmed) continue;
+	for (const cells of splitRows(text, delimiter)) {
+		// Skip fully empty rows.
+		if (cells.every((c) => !c.trim())) continue;
 
-		// Block header — may be written as `[MAIN]` (CSV single-cell row) or
-		// `[MAIN],,,,,,` (CSV with trailing empty cells). Detect by the leading
-		// bracket after stripping trailing delimiters.
-		const stripped = trimmed.replace(new RegExp(`${delimiter === '\t' ? '\\t' : ','}+$`), '');
-		if (stripped.startsWith('[') && stripped.endsWith(']')) {
-			const blockId = stripped.slice(1, -1);
+		// Block header — `[MAIN]` as a single cell, optionally followed
+		// by empty cells (spreadsheet exports write `[MAIN],,,,,,`).
+		const first = cells[0].trim();
+		const restEmpty = cells.slice(1).every((c) => !c.trim());
+		if (first.startsWith('[') && first.endsWith(']') && restEmpty) {
+			const blockId = first.slice(1, -1);
 			if (blockId === '@NS') {
 				inNsBlock = true;
 				currentBlock = null;
@@ -207,28 +219,31 @@ export function parseSimpleDspText(text: string): SimpleDspTextResult {
 		}
 
 		// Comment line (header row)
-		if (trimmed.startsWith('#')) continue;
+		if (first.startsWith('#')) continue;
 
 		if (inNsBlock) {
-			const parts = splitRow(trimmed, delimiter);
-			if (parts.length >= 2) {
-				namespaces[parts[0].trim()] = parts[1].trim();
+			if (cells.length >= 2 && cells[0].trim()) {
+				namespaces[cells[0].trim()] = (cells[1] || '').trim();
 			}
 			continue;
 		}
 
-		if (currentBlock) {
-			const cells = splitRow(trimmed, delimiter);
-			currentBlock.rows.push({
-				Name: (cells[0] || '').trim(),
-				Property: (cells[1] || '').trim(),
-				Min: (cells[2] || '').trim(),
-				Max: (cells[3] || '').trim(),
-				ValueType: (cells[4] || '').trim(),
-				Constraint: (cells[5] || '').trim(),
-				Comment: (cells[6] || '').trim(),
-			});
+		// Header-less shorthand (§6.2.6): statement rows before any
+		// block header open an implicit [MAIN] block.
+		if (!currentBlock) {
+			currentBlock = { id: 'MAIN', rows: [] };
+			blocks.push(currentBlock);
 		}
+
+		currentBlock.rows.push({
+			Name: cells[0] || '',
+			Property: (cells[1] || '').trim(),
+			Min: (cells[2] || '').trim(),
+			Max: (cells[3] || '').trim(),
+			ValueType: (cells[4] || '').trim(),
+			Constraint: (cells[5] || '').trim(),
+			Comment: cells[6] || '',
+		});
 	}
 
 	return { blocks, namespaces };
@@ -239,27 +254,34 @@ export function parseSimpleDspText(text: string): SimpleDspTextResult {
 /**
  * Parses a cardinality value from SimpleDSP.
  *
- * `-` means unbounded (null). Keywords like `推奨` (recommended)
- * return `null`. Any non-numeric string returns `null`.
+ * `-` means **explicitly unbounded** and returns `null`. An empty
+ * cell means unspecified and returns `undefined`. Keywords like
+ * `推奨` (recommended) and other non-numeric strings also return
+ * `undefined` (the caller preserves them as `cardinalityNote`).
  *
  * @param val - The cardinality string.
- * @returns The parsed integer, or `null` for unbounded/keyword values.
+ * @returns The parsed integer, `null` for `-`, or `undefined`.
  *
  * @example
  * parseCardinality('1')   // => 1
  * parseCardinality('-')   // => null
- * parseCardinality('推奨') // => null
+ * parseCardinality('')    // => undefined
+ * parseCardinality('推奨') // => undefined
  */
-export function parseCardinality(val: string): number | null {
-	if (!val || val === '-') return null;
+export function parseCardinality(val: string): number | null | undefined {
+	if (!val) return undefined;
+	if (val === '-') return null;
 	const n = parseInt(val, 10);
-	return Number.isNaN(n) ? null : n;
+	return Number.isNaN(n) ? undefined : n;
 }
 
 // ── Quoted Value Parser ─────────────────────────────────────────
 
 /**
  * Parses quoted values from a SimpleDSP constraint string.
+ *
+ * Doubled quotes inside a quoted token decode to a literal `"`
+ * (mirroring the generator's escaping).
  *
  * @param str - The constraint string containing quoted values.
  * @returns Array of unquoted values.
@@ -269,9 +291,9 @@ export function parseCardinality(val: string): number | null {
  * // => ['banana', 'apple', 'orange']
  */
 export function parseQuotedValues(str: string): string[] {
-	const matches = str.match(/"([^"]*)"/g);
+	const matches = str.match(/"((?:[^"]|"")*)"/g);
 	if (!matches) return [str];
-	return matches.map((m) => m.slice(1, -1));
+	return matches.map((m) => m.slice(1, -1).replace(/""/g, '"'));
 }
 
 // ── Statement Key Generator ────────────────────────────────────
@@ -356,20 +378,19 @@ export function simpleDspToTapir(
 	}
 
 	const descriptions: Description[] = [];
-	let isFirst = true;
 
 	for (const block of blocks) {
-		const descName = block.id === 'MAIN' && isFirst ? 'MAIN' : block.id;
-		isFirst = false;
+		const descName = block.id;
 
 		let targetClass = '';
 		let idPrefix = '';
+		let descNote = '';
 		const statements: Statement[] = [];
 		const usedKeys = new Set<string>();
 
 		for (let rowIndex = 0; rowIndex < block.rows.length; rowIndex++) {
 			const row = block.rows[rowIndex];
-			const stmtName = row.Name;
+			const stmtName = row.Name.trim();
 			const property = row.Property;
 			const minStr = row.Min;
 			const maxStr = row.Max;
@@ -377,12 +398,28 @@ export function simpleDspToTapir(
 			const constraint = row.Constraint || '';
 			const comment = row.Comment || '';
 
-			// Normalize Japanese value type names
-			const normalizedValueType = JP_VALUE_TYPE_MAP[rawValueType] || rawValueType;
+			// Normalise Japanese/alias value type names. The alias map may
+			// legitimately map to '' (制約なし → "no constraint"), so use a
+			// key-presence check rather than `||`.
+			const normalizedValueType =
+				rawValueType in VALUE_TYPE_ALIASES ? VALUE_TYPE_ALIASES[rawValueType] : rawValueType;
+
+			// Unrecognised value type — spec §4.5 treats this as an error.
+			// Record it and preserve the row's constraint verbatim so no
+			// data is silently lost or misfiled.
+			if (!KNOWN_VALUE_TYPES.has(normalizedValueType)) {
+				errors.push({
+					line: rowIndex + 1,
+					message: `Unrecognised value type "${row.ValueType}" in block "${descName}" (row ${rowIndex + 1})`,
+				});
+			}
 
 			// ID statement — defines the record's identity
 			if (normalizedValueType === 'id') {
 				if (property) targetClass = property;
+				// The ID row's Comment column carries the description's
+				// note (the generator writes desc.note there).
+				if (comment) descNote = comment;
 				if (constraint) {
 					// The ID-row constraint column holds one of two things
 					// (per the SimpleDSP spec): a namespace prefix reference
@@ -415,11 +452,12 @@ export function simpleDspToTapir(
 			if (stmtName) stmt.label = stmtName;
 			if (property) stmt.propertyId = property;
 
-			// Cardinality
+			// Cardinality. `-` parses to null (explicitly unbounded) and
+			// must be assigned; an empty cell stays undefined (unspecified).
 			const min = parseCardinality(minStr);
 			const max = parseCardinality(maxStr);
-			if (min != null) stmt.min = min;
-			if (max != null) stmt.max = max;
+			if (min !== undefined) stmt.min = min;
+			if (max !== undefined) stmt.max = max;
 			if (minStr && min == null && minStr !== '-') {
 				stmt.cardinalityNote = minStr;
 			}
@@ -463,8 +501,14 @@ export function simpleDspToTapir(
 					if (constraint) {
 						const raw = constraint.replace(/<([^>]+)>/g, '$1');
 						const parts = raw.split(/\s+/).filter(Boolean);
-						const schemes = parts.filter((p) => p.endsWith(':'));
-						const uris = parts.filter((p) => !p.endsWith(':'));
+						// Vocabulary stems come in two spellings: a prefix
+						// reference ending with `:` (e.g. `ndlsh:`) or a full
+						// namespace URI ending with `/` or `#`. Both denote
+						// inScheme; anything else is an enumerated IRI value.
+						const isStem = (p: string) =>
+							p.endsWith(':') || (/^(https?|urn):/.test(p) && /[/#]$/.test(p));
+						const schemes = parts.filter(isStem);
+						const uris = parts.filter((p) => !isStem(p));
 						if (schemes.length > 0) {
 							stmt.inScheme = schemes;
 						}
@@ -474,10 +518,20 @@ export function simpleDspToTapir(
 					}
 					break;
 
-				default:
-					// No specific type — leave unconstrained
+				case '':
+					// No specific type — leave unconstrained. A constraint
+					// cell in an untyped row is read as datatype(s), the
+					// only constraint kind meaningful without a value type.
 					if (constraint) {
 						stmt.datatype = constraint.split(/\s+/).filter(Boolean);
+					}
+					break;
+
+				default:
+					// Unrecognised value type (already reported as an error
+					// above) — keep the raw constraint so nothing is lost.
+					if (constraint) {
+						stmt.constraint = constraint;
 					}
 					break;
 			}
@@ -489,8 +543,22 @@ export function simpleDspToTapir(
 		const desc = createDescription({ name: descName });
 		if (targetClass) desc.targetClass = targetClass;
 		if (idPrefix) desc.idPrefix = idPrefix;
+		if (descNote) desc.note = descNote;
 		desc.statements = statements;
 		descriptions.push(desc);
+	}
+
+	// Resolve `#MAIN` references to the first block. The generator
+	// renames the first description to `[MAIN]` on export and rewrites
+	// refs accordingly; if this document's first block kept a custom
+	// name, refs to `MAIN` still mean "the first description".
+	const firstName = descriptions[0]?.name;
+	if (firstName && firstName !== 'MAIN') {
+		for (const desc of descriptions) {
+			for (const stmt of desc.statements) {
+				stmt.shapeRefs = stmt.shapeRefs.map((r) => (r === 'MAIN' ? firstName : r));
+			}
+		}
 	}
 
 	if (blocks.length === 0) {

@@ -258,7 +258,7 @@ describe('buildSimpleDsp', () => {
 		expect(dataLine).toContain('文字列');
 	});
 
-	it('generates ID row for targetClass', () => {
+	it('generates ID row for targetClass without leaking the base URI', () => {
 		const project = makeProject({ base: 'http://example.org/' });
 		project.descriptions = [
 			createDescription({
@@ -275,7 +275,27 @@ describe('buildSimpleDsp', () => {
 		];
 
 		const text = buildSimpleDsp(project);
-		expect(text).toContain('ID\tfoaf:Person\t1\t1\tID\thttp://example.org/');
+		// The ID-row constraint column may carry only the `prefix:` form;
+		// the raw project base is the schema namespace, not the record
+		// namespace, and must never be written there.
+		expect(text).toContain('ID\tfoaf:Person\t1\t1\tID\t\t');
+		expect(text).not.toContain('ID\tfoaf:Person\t1\t1\tID\thttp://example.org/');
+	});
+
+	it('uses idPrefix (prefix: form) in the ID-row constraint column', () => {
+		const project = makeProject({
+			namespaces: { ndlbooks: 'http://example.org/ndlbooks/' },
+		});
+		project.descriptions = [
+			createDescription({
+				name: 'Book',
+				targetClass: 'dcterms:BibliographicResource',
+				idPrefix: 'ndlbooks',
+				statements: [createStatement({ label: 'Title', propertyId: 'dcterms:title' })],
+			}),
+		];
+		const text = buildSimpleDsp(project);
+		expect(text).toContain('ID\tdcterms:BibliographicResource\t1\t1\tID\tndlbooks:\t');
 	});
 
 	it('generates correct cardinality', () => {

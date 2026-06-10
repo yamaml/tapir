@@ -14,28 +14,14 @@
  * @module converters/simpledsp-generator
  */
 
-import type { TapirProject, Description, Statement, NamespaceMap } from '$lib/types';
+import type { TapirProject, Statement, NamespaceMap } from '$lib/types';
+import type { GeneratorWarning } from '$lib/types/export';
+import { STANDARD_PREFIXES } from './prefix-utils';
 
-// ── Standard Prefixes ───────────────────────────────────────────
-
-/**
- * Standard prefixes (Table 19 from the SimpleDSP spec + schema: extension).
- *
- * These are implicitly recognised and can be omitted from the `[@NS]`
- * block unless overridden with a different URI.
- */
-export const STANDARD_PREFIXES: NamespaceMap = {
-	dc: 'http://purl.org/dc/elements/1.1/',
-	dcterms: 'http://purl.org/dc/terms/',
-	foaf: 'http://xmlns.com/foaf/0.1/',
-	skos: 'http://www.w3.org/2004/02/skos/core#',
-	xl: 'http://www.w3.org/2008/05/skos-xl#',
-	rdf: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
-	rdfs: 'http://www.w3.org/2000/01/rdf-schema#',
-	owl: 'http://www.w3.org/2002/07/owl#',
-	xsd: 'http://www.w3.org/2001/XMLSchema#',
-	schema: 'https://schema.org/',
-};
+// Re-exported for backwards compatibility: the table now lives in
+// prefix-utils (it is shared by every RDF generator), but several
+// modules import it from here.
+export { STANDARD_PREFIXES };
 
 // ── Language-specific Labels ────────────────────────────────────
 
@@ -45,12 +31,17 @@ const SIMPLEDSP_HEADERS: Record<string, string> = {
 	jp: '#項目規則名\tプロパティ\t最小\t最大\t値タイプ\t値制約\tコメント',
 };
 
-/** Maps internal display value types to Japanese for export. */
+/**
+ * Maps internal display value types to Japanese for export.
+ *
+ * Keys match the values `resolveSimpleDspValueType` returns —
+ * including `IRI` (spec Table 15: `参照値`).
+ */
 const VALUE_TYPE_JP: Record<string, string> = {
 	ID: 'ID',
 	literal: '文字列',
 	structured: '構造化',
-	reference: '参照値',
+	IRI: '参照値',
 	'': '制約なし',
 };
 
@@ -118,11 +109,19 @@ export function resolveSimpleDspValueType(stmt: Statement): string {
  * @example
  * resolveSimpleDspConstraint({ datatype: ['xsd:decimal', 'xsd:integer'] })
  * // => 'xsd:decimal xsd:integer'
+ *
+ * @param stmt - The statement to resolve.
+ * @param firstDescName - Name of the first description. The export
+ *   renames the first block to `[MAIN]`, so references to it must be
+ *   rewritten to `#MAIN` or they would dangle.
  */
-export function resolveSimpleDspConstraint(stmt: Statement): string {
-	// Shape reference(s)
+export function resolveSimpleDspConstraint(stmt: Statement, firstDescName?: string): string {
+	// Shape reference(s). Refs to the first description follow its
+	// rename to MAIN (self-references included).
 	if (stmt.shapeRefs && stmt.shapeRefs.length > 0) {
-		return stmt.shapeRefs.map((s) => `#${s}`).join(' ');
+		return stmt.shapeRefs
+			.map((s) => `#${firstDescName !== undefined && s === firstDescName ? 'MAIN' : s}`)
+			.join(' ');
 	}
 
 	// Class constraint
@@ -146,11 +145,44 @@ export function resolveSimpleDspConstraint(stmt: Statement): string {
 		if (stmt.valueType === 'iri') {
 			return stmt.values.join(' ');
 		}
-		// Literal picklist: quoted strings
-		return stmt.values.map((v) => `"${v}"`).join(' ');
+		// Literal picklist: quoted strings; embedded quotes escape as
+		// doubled quotes (the parser's parseQuotedValues reverses this).
+		return stmt.values.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(' ');
 	}
 
 	return '';
+}
+
+// ── Cell Sanitiser ──────────────────────────────────────────────
+
+/**
+ * Sanitises a value for use as a SimpleDSP TSV cell: tabs and
+ * newlines would corrupt the positional row structure, so they are
+ * collapsed to single spaces (with a warning).
+ */
+function sanitiseCell(
+	value: string,
+	context: string,
+	warnings?: GeneratorWarning[]
+): string {
+	if (!/[\t\r\n]/.test(value)) return value;
+	warnings?.push({
+		message: `${context}: tab/newline characters were replaced with spaces in the SimpleDSP cell`,
+	});
+	return value.replace(/[\t\r\n]+/g, ' ');
+}
+
+// ── Statement Name Fallback ─────────────────────────────────────
+
+/**
+ * Resolves the Name column for a statement row: the label when set,
+ * otherwise a key derived from the property's local name, otherwise
+ * the statement id. Never empty (SimpleDSP §7.5 requires a name).
+ */
+function resolveStatementName(stmt: Statement): string {
+	if (stmt.label) return stmt.label;
+	const local = (stmt.propertyId || '').split(/[:#/]/).filter(Boolean).pop();
+	return local || stmt.id;
 }
 
 // ── Generator ───────────────────────────────────────────────────
@@ -159,16 +191,25 @@ export function resolveSimpleDspConstraint(stmt: Statement): string {
 export interface SimpleDspGeneratorOptions {
 	/** Header/value-type language: `"en"` (default) or `"jp"`. */
 	lang?: 'en' | 'jp';
+	/** Optional accumulator for lossy-mapping warnings. */
+	warnings?: GeneratorWarning[];
 }
 
 /**
  * Generates SimpleDSP text output from a `TapirProject`.
  *
  * Produces a tab-separated text file with `[@NS]` namespace
- * declarations and one block per description template.
+ * declarations and one block per description template. The first
+ * description is renamed to `[MAIN]`; shape references to it are
+ * rewritten to `#MAIN` so they cannot dangle.
+ *
+ * ID rows are emitted for the first (MAIN) block and for any
+ * description that declares an `idPrefix` or `targetClass`. The ID
+ * row's constraint column carries only the `prefix:` form — never a
+ * raw base URI, which would conflate record and schema namespaces.
  *
  * @param project - The Tapir project to export.
- * @param opts - Generator options.
+ * @param opts - Generator options (language, warning accumulator).
  * @returns The SimpleDSP text content.
  *
  * @example
@@ -177,7 +218,7 @@ export interface SimpleDspGeneratorOptions {
  */
 export function buildSimpleDsp(
 	project: TapirProject,
-	{ lang = 'en' }: SimpleDspGeneratorOptions = {}
+	{ lang = 'en', warnings }: SimpleDspGeneratorOptions = {}
 ): string {
 	const namespaces = project.namespaces || {};
 	const base = project.base || '';
@@ -212,6 +253,19 @@ export function buildSimpleDsp(
 	}
 
 	const isJp = lang === 'jp';
+	const firstDescName = descriptions[0]?.name;
+
+	// The first block is renamed [MAIN]; a *different* description that
+	// is literally named MAIN would collide with the rename.
+	if (
+		firstDescName &&
+		firstDescName !== 'MAIN' &&
+		descriptions.some((d, i) => i > 0 && d.name === 'MAIN')
+	) {
+		warnings?.push({
+			message: `The first description "${firstDescName}" is renamed to [MAIN] on export, but another description is already named "MAIN" — references may resolve to the wrong block`,
+		});
+	}
 
 	for (let i = 0; i < descriptions.length; i++) {
 		const desc = descriptions[i];
@@ -221,22 +275,29 @@ export function buildSimpleDsp(
 		// Header comment line
 		lines.push(isJp ? SIMPLEDSP_HEADERS.jp : SIMPLEDSP_HEADERS.en);
 
-		// ID row — per spec, every description block has one. The constraint
-		// column holds the base URI for record URIs: user's idPrefix
-		// declaration wins; otherwise fall back to the project's base URI.
-		const idComment = desc.note || '';
-		const idConstraint = desc.idPrefix ? `${desc.idPrefix}:` : (base || '');
-		lines.push(
-			`ID\t${desc.targetClass}\t1\t1\tID\t${idConstraint}\t${idComment}`
-		);
+		// ID row — emitted for the MAIN block and for descriptions that
+		// declare identity information (idPrefix or targetClass). The
+		// constraint column carries only the `prefix:` form; the raw
+		// project base never belongs there (it is the schema namespace,
+		// not the record namespace — SimpleDSP §3.2 distinguishes them).
+		if (i === 0 || desc.idPrefix || desc.targetClass) {
+			const idComment = sanitiseCell(desc.note || '', `Description "${desc.name}" note`, warnings);
+			const idConstraint = desc.idPrefix ? `${desc.idPrefix}:` : '';
+			lines.push(`ID\t${desc.targetClass}\t1\t1\tID\t${idConstraint}\t${idComment}`);
+		} else if (desc.note) {
+			warnings?.push({
+				message: `Description "${desc.name}" has a note but no ID row (no idPrefix/targetClass) — the note is not exported`,
+			});
+		}
 
 		for (const stmt of desc.statements) {
-			const stmtName = stmt.label || '';
+			const ctx = `Statement "${stmt.label || stmt.propertyId || stmt.id}" in "${desc.name}"`;
+			const stmtName = sanitiseCell(resolveStatementName(stmt), ctx, warnings);
 			const property = stmt.propertyId || '';
 
 			// Cardinality
 			const min = stmt.cardinalityNote
-				? stmt.cardinalityNote
+				? sanitiseCell(stmt.cardinalityNote, ctx, warnings)
 				: stmt.min != null
 					? String(stmt.min)
 					: '0';
@@ -244,8 +305,12 @@ export function buildSimpleDsp(
 
 			const valueTypeEn = resolveSimpleDspValueType(stmt);
 			const valueType = isJp ? (VALUE_TYPE_JP[valueTypeEn] ?? valueTypeEn) : valueTypeEn;
-			const constraint = resolveSimpleDspConstraint(stmt);
-			const comment = stmt.note || '';
+			const constraint = sanitiseCell(
+				resolveSimpleDspConstraint(stmt, firstDescName),
+				ctx,
+				warnings
+			);
+			const comment = sanitiseCell(stmt.note || '', ctx, warnings);
 
 			lines.push(
 				`${stmtName}\t${property}\t${min}\t${max}\t${valueType}\t${constraint}\t${comment}`

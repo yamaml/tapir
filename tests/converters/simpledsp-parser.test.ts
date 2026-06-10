@@ -20,13 +20,13 @@ describe('parseCardinality', () => {
 		expect(parseCardinality('-')).toBeNull();
 	});
 
-	it('returns null for empty string', () => {
-		expect(parseCardinality('')).toBeNull();
+	it('returns undefined for empty string (unspecified)', () => {
+		expect(parseCardinality('')).toBeUndefined();
 	});
 
-	it('returns null for keyword values', () => {
-		expect(parseCardinality('推奨')).toBeNull();
-		expect(parseCardinality('recommended')).toBeNull();
+	it('returns undefined for keyword values', () => {
+		expect(parseCardinality('推奨')).toBeUndefined();
+		expect(parseCardinality('recommended')).toBeUndefined();
 	});
 });
 
@@ -398,7 +398,7 @@ describe('simpleDspToTapir', () => {
 
 		const result = simpleDspToTapir(blocks, {});
 		const stmt = result.data.descriptions[0].statements[0];
-		expect(stmt.min).toBeNull();
+		expect(stmt.min).toBeUndefined();
 		expect(stmt.cardinalityNote).toBe('推奨');
 	});
 
