@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Description, Flavor, Statement } from '$lib/types';
-	import { getFlavorLabels } from '$lib/types';
+	import { getEditorStrings } from '$lib/types';
+	import { displayValueType } from '$lib/utils/editor-cells';
 	import { updateStatement, currentProject, simpleDspLang } from '$lib/stores';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 
@@ -13,7 +14,7 @@
 
 	let { stmt, description, flavor, onclose }: Props = $props();
 
-	let labels = $derived(getFlavorLabels(flavor, $simpleDspLang));
+	let ui = $derived(getEditorStrings(flavor, $simpleDspLang));
 
 	/** Other description names for shape ref options. */
 	let descriptionNames = $derived(
@@ -293,7 +294,7 @@
 						type="button"
 						class="px-2 h-6 text-[11px] rounded bg-primary text-primary-foreground hover:bg-primary/90"
 						onclick={commitDctapText}
-					>Set</button>
+					>{ui.setButton}</button>
 				</div>
 			</div>
 		{:else if t === 'iristem'}
@@ -314,7 +315,7 @@
 						type="button"
 						class="px-2 h-6 text-[11px] rounded bg-primary text-primary-foreground hover:bg-primary/90"
 						onclick={commitDctapText}
-					>Set</button>
+					>{ui.setButton}</button>
 				</div>
 			</div>
 		{:else if t === 'pattern'}
@@ -335,7 +336,7 @@
 						type="button"
 						class="px-2 h-6 text-[11px] rounded bg-primary text-primary-foreground hover:bg-primary/90"
 						onclick={commitDctapText}
-					>Set</button>
+					>{ui.setButton}</button>
 				</div>
 			</div>
 		{:else if t === 'mininclusive' || t === 'maxinclusive' || t === 'minlength' || t === 'maxlength'}
@@ -359,7 +360,7 @@
 						type="button"
 						class="px-2 h-6 text-[11px] rounded bg-primary text-primary-foreground hover:bg-primary/90"
 						onclick={commitDctapFacet}
-					>Set</button>
+					>{ui.setButton}</button>
 				</div>
 			</div>
 		{:else}
@@ -382,17 +383,17 @@
 						type="button"
 						class="px-2 h-6 text-[11px] rounded bg-primary text-primary-foreground hover:bg-primary/90"
 						onclick={commitDctapText}
-					>Set</button>
+					>{ui.setButton}</button>
 				</div>
 			</div>
 		{/if}
-	{:else if !stmt.valueType && (!stmt.shapeRefs || stmt.shapeRefs.length === 0) && stmt.classConstraint?.length === 0}
-		<p class="text-muted-foreground italic py-2">Set a ValueType first to configure constraints.</p>
+	{:else if !stmt.valueType && (!stmt.shapeRefs || stmt.shapeRefs.length === 0) && stmt.classConstraint?.length === 0 && descriptionNames.length === 0}
+		<p class="text-muted-foreground italic py-2">{ui.setValueTypeFirst}</p>
 
 	{:else if stmt.valueType === 'literal'}
 		<!-- Literal constraints: datatype picker + picklist input -->
 		<div class="space-y-1.5">
-			<p class="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">Datatype</p>
+			<p class="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">{ui.datatypeHeading}</p>
 			<ScrollArea class="max-h-[140px]">
 				<div class="grid grid-cols-2 gap-0.5">
 					{#each COMMON_DATATYPES as dt}
@@ -412,7 +413,7 @@
 
 			<div class="border-t border-border pt-1.5">
 				<p class="font-medium text-muted-foreground uppercase tracking-wider text-[10px] mb-1">
-					Picklist / custom datatype
+					{ui.picklistHeading}
 				</p>
 				<div class="flex gap-1">
 					<input
@@ -427,17 +428,20 @@
 						type="button"
 						class="px-2 h-6 text-[11px] rounded bg-primary text-primary-foreground hover:bg-primary/90"
 						onclick={commitFreeText}
-					>Set</button>
+					>{ui.setButton}</button>
 				</div>
 			</div>
 		</div>
 
-	{:else if stmt.valueType === 'iri' || (stmt.valueType as string) === 'structured' || (stmt.shapeRefs && stmt.shapeRefs.length > 0) || stmt.classConstraint?.length > 0}
-		<!-- IRI / Structured constraints: shape refs (multi-select), vocab stems, URI list -->
+	{:else if stmt.valueType === 'iri' || displayValueType(stmt) === 'structured' || !stmt.valueType}
+		<!-- IRI / structured / untyped: reference toggles, vocab stems,
+			 URI list. Untyped rows are included so picking "structured"
+			 in the smart table (which stores no valueType — the type is
+			 derived from refs) immediately offers the reference list. -->
 		<div class="space-y-1.5">
 			{#if descriptionNames.length > 0}
 				<div>
-					<p class="font-medium text-muted-foreground uppercase tracking-wider text-[10px] mb-1">Shape references (click to toggle)</p>
+					<p class="font-medium text-muted-foreground uppercase tracking-wider text-[10px] mb-1">{ui.shapeReferencesHeading}</p>
 					<ScrollArea class="max-h-[90px]">
 						<div class="space-y-0.5">
 							{#each descriptionNames as name}
@@ -459,7 +463,7 @@
 
 			{#if stmt.valueType === 'iri'}
 				<div class="border-t border-border pt-1.5">
-					<p class="font-medium text-muted-foreground uppercase tracking-wider text-[10px] mb-1">Vocabulary stem</p>
+					<p class="font-medium text-muted-foreground uppercase tracking-wider text-[10px] mb-1">{ui.vocabStemHeading}</p>
 					{#if (stmt.inScheme?.length ?? 0) > 0}
 						<div class="flex flex-wrap gap-1 mb-1.5">
 							{#each stmt.inScheme as stem}
@@ -493,7 +497,7 @@
 				</div>
 
 				<div class="border-t border-border pt-1.5">
-					<p class="font-medium text-muted-foreground uppercase tracking-wider text-[10px] mb-1">URI list</p>
+					<p class="font-medium text-muted-foreground uppercase tracking-wider text-[10px] mb-1">{ui.uriListHeading}</p>
 					<div class="flex gap-1">
 						<input
 							type="text"
@@ -507,7 +511,7 @@
 							type="button"
 							class="px-2 h-6 text-[11px] rounded bg-primary text-primary-foreground hover:bg-primary/90"
 							onclick={commitFreeText}
-						>Set</button>
+						>{ui.setButton}</button>
 					</div>
 				</div>
 			{/if}
@@ -528,7 +532,7 @@
 				type="button"
 				class="px-2 h-6 text-[11px] rounded bg-primary text-primary-foreground hover:bg-primary/90"
 				onclick={commitFreeText}
-			>Set</button>
+			>{ui.setButton}</button>
 		</div>
 	{/if}
 
@@ -539,7 +543,7 @@
 				class="text-[10px] text-muted-foreground hover:text-destructive transition-colors"
 				onclick={clearConstraint}
 			>
-				Clear constraint
+				{ui.clearConstraint}
 			</button>
 		</div>
 	{/if}

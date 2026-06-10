@@ -1,11 +1,18 @@
 <script lang="ts">
 	import type { TapirProject, Flavor } from '$lib/types';
-	import { buildSimpleDsp, resolveSimpleDspValueType, resolveSimpleDspConstraint } from '$lib/converters';
-	import { buildDctapRows, DCTAP_COLUMNS } from '$lib/converters';
-	import { currentProject, updateStatement, updateDescription, simpleDspLang } from '$lib/stores';
-	import { parseSimpleDspText, simpleDspToTapir, parseCardinality } from '$lib/converters';
+	import { resolveSimpleDspValueType, resolveSimpleDspConstraint } from '$lib/converters';
+	import { DCTAP_COLUMNS } from '$lib/converters';
+	import { updateStatement, updateDescription, simpleDspLang, addStatement } from '$lib/stores';
+	import { parseCardinality } from '$lib/converters';
+	import {
+		parseValueTypeCell,
+		valueTypeSelectionUpdates,
+		parseSimpleDspConstraintCell,
+		parseDctapConstraintCell,
+	} from '$lib/utils/editor-cells';
+	import { buildDctapLines, type DctapLine } from '$lib/utils/dctap-lines';
+	import { focusOnMount } from '$lib/utils/focus-on-mount';
 	import Plus from 'lucide-svelte/icons/plus';
-	import { addStatement } from '$lib/stores';
 
 	/** English → Japanese mapping for SimpleDSP value-type display. */
 	const VALUE_TYPE_JP: Record<string, string> = {
@@ -97,62 +104,41 @@
 
 	// ── DCTAP view ──────────────────────────────────────────────────
 
-	interface DctapLine {
-		type: 'shape-header' | 'data';
-		cells: string[];
-		descIndex?: number;
-		stmtIndex?: number;
-	}
-
+	// Line→statement coordinates come from `buildDctapLines`, which
+	// walks the descriptions in step with the generator's row order —
+	// so a first statement with an empty propertyID stays editable and
+	// dedicated shape header rows (emitted when a shape has a note)
+	// never shift later rows onto the wrong statement.
 	let dctapLines = $derived.by((): DctapLine[] => {
 		if (flavor !== 'dctap') return [];
-		// `includeEmptyStatements: true` keeps placeholder rows visible
-		// so the user can fill in the propertyID of a freshly-added
-		// statement. The default DCTAP file-format output omits them.
-		const rows = buildDctapRows(project, { includeEmptyStatements: true });
-		const lines: DctapLine[] = [];
-		let currentDescIdx = -1;
-		let stmtCountInDesc = 0;
-
-		for (const row of rows) {
-			if (row.shapeID) {
-				currentDescIdx++;
-				stmtCountInDesc = 0;
-				// If this is a shape-only row (no propertyID), show as shape header
-				if (!row.propertyID) {
-					lines.push({
-						type: 'shape-header',
-						cells: DCTAP_COLUMNS.map((c) => row[c]),
-						descIndex: currentDescIdx,
-					});
-					continue;
-				}
-			}
-
-			lines.push({
-				type: row.shapeID ? 'shape-header' : 'data',
-				cells: DCTAP_COLUMNS.map((c) => row[c]),
-				descIndex: currentDescIdx,
-				stmtIndex: stmtCountInDesc,
-			});
-			stmtCountInDesc++;
-		}
-
-		return lines;
+		return buildDctapLines(project);
 	});
 
 	// ── Inline editing ──────────────────────────────────────────────
 
 	let editingCell = $state<string | null>(null);
 	let editValue = $state('');
+	/**
+	 * Cell text at edit start. Commit is a no-op when the value is
+	 * unchanged — without this, blurring a cell whose display is
+	 * composed (localized value types, the Constraint column) would
+	 * re-parse the display text and corrupt the underlying fields.
+	 */
+	let originalValue = $state('');
 
 	function startEdit(lineIndex: number, colIndex: number, currentValue: string) {
 		editingCell = `${lineIndex}-${colIndex}`;
 		editValue = currentValue;
+		originalValue = currentValue;
 	}
 
 	function commitSimpleDspEdit(line: SimpleDspLine, colIndex: number) {
 		if (!editingCell || line.descIndex == null) {
+			editingCell = null;
+			return;
+		}
+		// Unchanged → no-op (see `originalValue`).
+		if (editValue === originalValue) {
 			editingCell = null;
 			return;
 		}
@@ -187,54 +173,35 @@
 			case 2: { // Min
 				const n = parseCardinality(editValue);
 				if (editValue && n == null && editValue !== '-') {
-					updateStatement(desc.id, stmt.id, { cardinalityNote: editValue, min: null });
+					// Keyword cardinality (推奨 etc.) — keep the keyword,
+					// leave min unset (undefined = unspecified).
+					updateStatement(desc.id, stmt.id, { cardinalityNote: editValue, min: undefined });
 				} else {
+					// '' → undefined (unset); numbers pass through.
 					updateStatement(desc.id, stmt.id, { min: n, cardinalityNote: '' });
 				}
 				break;
 			}
 			case 3: { // Max
+				// Tri-state: '' → undefined (unset), '-' → null (explicitly
+				// unbounded), number → explicit. Legacy stored null values
+				// keep meaning "unbounded" — no migration needed.
 				const n = parseCardinality(editValue);
 				updateStatement(desc.id, stmt.id, { max: n });
 				break;
 			}
-			case 4: { // ValueType
-				const vt = editValue.toLowerCase();
-				if (vt === 'literal') {
-					updateStatement(desc.id, stmt.id, { valueType: 'literal' });
-				} else if (vt === 'iri') {
-					updateStatement(desc.id, stmt.id, { valueType: 'iri' });
-				} else if (vt === 'structured') {
-					// structured is derived, keep current
-				} else {
-					updateStatement(desc.id, stmt.id, { valueType: '' });
+			case 4: { // ValueType — accepts EN + JP labels (文字列/参照値/構造化/制約なし)
+				const parsed = parseValueTypeCell(editValue);
+				if (parsed === null || parsed === 'structured') {
+					// Unrecognised input never wipes the stored value;
+					// 'structured' is derived from refs — keep current.
+					break;
 				}
+				updateStatement(desc.id, stmt.id, valueTypeSelectionUpdates(parsed));
 				break;
 			}
-			case 5: { // Constraint
-				if (editValue.startsWith('#')) {
-					// SimpleDSP spec: single #shape; also accept space-separated
-					// "#A #B" for round-tripping multi-shape profiles.
-					const refs = editValue
-						.split(/\s+/)
-						.filter((s) => s.startsWith('#'))
-						.map((s) => s.slice(1))
-						.filter(Boolean);
-					updateStatement(desc.id, stmt.id, {
-						shapeRefs: refs,
-						constraint: '',
-						datatype: [],
-					});
-				} else if (stmt.valueType === 'literal' && editValue) {
-					// SimpleDSP allows multi-datatype as a space-separated list
-					// in the Constraint column (spec §4.6, Table 16).
-					updateStatement(desc.id, stmt.id, {
-						datatype: editValue.split(/\s+/).filter(Boolean),
-						constraint: '',
-					});
-				} else {
-					updateStatement(desc.id, stmt.id, { constraint: editValue });
-				}
+			case 5: { // Constraint — parse back with the display's precedence
+				updateStatement(desc.id, stmt.id, parseSimpleDspConstraintCell(editValue, stmt));
 				break;
 			}
 			case 6: // Comment
@@ -246,17 +213,48 @@
 	}
 
 	function commitDctapEdit(line: DctapLine, colIndex: number) {
-		if (!editingCell || line.descIndex == null || line.stmtIndex == null) {
+		if (!editingCell || line.descIndex == null) {
+			editingCell = null;
+			return;
+		}
+		// Unchanged → no-op (see `originalValue`).
+		if (editValue === originalValue) {
 			editingCell = null;
 			return;
 		}
 
 		const desc = project.descriptions[line.descIndex];
 		if (!desc) { editingCell = null; return; }
+
+		const colName = DCTAP_COLUMNS[colIndex];
+
+		// Shape-level cells: editable on the line that displays them
+		// (a dedicated header row, or the shape's first statement row).
+		if (colName === 'shapeID' || colName === 'shapeLabel') {
+			if (line.carriesShape) {
+				if (colName === 'shapeID' && editValue.trim()) {
+					updateDescription(desc.id, { name: editValue.trim() });
+				} else if (colName === 'shapeLabel') {
+					updateDescription(desc.id, { label: editValue });
+				}
+			}
+			editingCell = null;
+			return;
+		}
+
+		// Header rows have no statement; their note column belongs to
+		// the description (it's where the generator writes desc.note).
+		if (line.stmtIndex == null) {
+			if (line.kind === 'header' && colName === 'note') {
+				updateDescription(desc.id, { note: editValue });
+			}
+			editingCell = null;
+			return;
+		}
+
 		const stmt = desc.statements[line.stmtIndex];
 		if (!stmt) { editingCell = null; return; }
 
-		const colName = DCTAP_COLUMNS[colIndex];
 		switch (colName) {
 			case 'propertyID':
 				updateStatement(desc.id, stmt.id, { propertyId: editValue });
@@ -268,22 +266,24 @@
 				const upper = editValue.toUpperCase();
 				if (upper === 'TRUE') updateStatement(desc.id, stmt.id, { min: 1 });
 				else if (upper === 'FALSE') updateStatement(desc.id, stmt.id, { min: 0 });
-				else updateStatement(desc.id, stmt.id, { min: null });
+				else updateStatement(desc.id, stmt.id, { min: undefined }); // cleared → unset
 				break;
 			}
 			case 'repeatable': {
+				// Tri-state max: TRUE → null (explicitly unbounded),
+				// FALSE → 1, cleared → undefined (unset). Legacy stored
+				// null values keep meaning "unbounded" — no migration.
 				const upper = editValue.toUpperCase();
 				if (upper === 'TRUE') updateStatement(desc.id, stmt.id, { max: null });
 				else if (upper === 'FALSE') updateStatement(desc.id, stmt.id, { max: 1 });
-				else updateStatement(desc.id, stmt.id, { max: null });
+				else updateStatement(desc.id, stmt.id, { max: undefined });
 				break;
 			}
 			case 'valueNodeType': {
-				const lower = editValue.toLowerCase();
-				if (lower === 'iri') updateStatement(desc.id, stmt.id, { valueType: 'iri' });
-				else if (lower === 'literal') updateStatement(desc.id, stmt.id, { valueType: 'literal' });
-				else if (lower === 'bnode') updateStatement(desc.id, stmt.id, { valueType: 'bnode' });
-				else updateStatement(desc.id, stmt.id, { valueType: '' });
+				const parsed = parseValueTypeCell(editValue);
+				// Unrecognised input never wipes the stored value.
+				if (parsed === null || parsed === 'structured') break;
+				updateStatement(desc.id, stmt.id, valueTypeSelectionUpdates(parsed));
 				break;
 			}
 			case 'valueDataType':
@@ -294,7 +294,10 @@
 				});
 				break;
 			case 'valueConstraint':
-				updateStatement(desc.id, stmt.id, { constraint: editValue });
+				// Parse back per valueConstraintType — a composed display
+				// (picklist, IRI stem, pattern, facet) returns to its
+				// structured field instead of being dumped into `constraint`.
+				updateStatement(desc.id, stmt.id, parseDctapConstraintCell(editValue, stmt));
 				break;
 			case 'valueConstraintType':
 				updateStatement(desc.id, stmt.id, { constraintType: editValue });
@@ -373,7 +376,7 @@
 												onblur={() => commitSimpleDspEdit(line, colIndex)}
 												onkeydown={(e: KeyboardEvent) => handleKeydown(e, () => commitSimpleDspEdit(line, colIndex))}
 												class="w-full h-6 px-1 text-xs font-mono bg-background border border-ring rounded focus:outline-none focus:ring-1 focus:ring-ring"
-												autofocus
+												use:focusOnMount
 											/>
 										</td>
 									{:else}
@@ -389,7 +392,7 @@
 												}
 											}}
 										>
-											{cell || '\u00A0'}
+											{cell || ' '}
 										</td>
 									{/if}
 								{/each}
@@ -435,7 +438,7 @@
 				<tbody>
 					{#each dctapLines as line, lineIndex}
 						<tr class="border-b border-border/50 last:border-b-0
-							{line.type === 'shape-header' ? 'bg-muted/30 font-semibold' : lineIndex % 2 === 0 ? 'bg-card' : 'bg-background'}">
+							{line.carriesShape ? 'bg-muted/30 font-semibold' : lineIndex % 2 === 0 ? 'bg-card' : 'bg-background'}">
 							{#each line.cells as cell, colIndex}
 								{#if editingCell === `${lineIndex}-${colIndex}`}
 									<td class="px-0.5 py-0.5">
@@ -445,7 +448,7 @@
 											onblur={() => commitDctapEdit(line, colIndex)}
 											onkeydown={(e: KeyboardEvent) => handleKeydown(e, () => commitDctapEdit(line, colIndex))}
 											class="w-full h-6 px-1 text-xs font-mono bg-background border border-ring rounded focus:outline-none focus:ring-1 focus:ring-ring"
-											autofocus
+											use:focusOnMount
 										/>
 									</td>
 								{:else}
@@ -462,7 +465,7 @@
 											}
 										}}
 									>
-										{cell || '\u00A0'}
+										{cell || ' '}
 									</td>
 								{/if}
 							{/each}

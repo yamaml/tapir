@@ -1,6 +1,11 @@
 <script lang="ts">
-	import type { Description, Flavor, Statement, ValueType } from '$lib/types';
-	import { getFlavorLabels } from '$lib/types';
+	import type { Description, Flavor, Statement } from '$lib/types';
+	import { getFlavorLabels, getEditorStrings } from '$lib/types';
+	import {
+		displayValueType,
+		valueTypeSelectionUpdates,
+		type DisplayValueType,
+	} from '$lib/utils/editor-cells';
 	import { currentProject, simpleDspLang, updateDescription, addStatement, removeStatement, updateStatement, duplicateStatement } from '$lib/stores';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -39,6 +44,7 @@
 	let nameReadonly = $derived(isFirst && flavor === 'simpledsp');
 
 	let labels = $derived(getFlavorLabels(flavor, $simpleDspLang));
+	let ui = $derived(getEditorStrings(flavor, $simpleDspLang));
 
 	/**
 	 * Shared Tailwind class for form field labels. DCTAP column names
@@ -77,12 +83,15 @@
 	/** Track which statement has the constraint popover open. */
 	let constraintPopoverStmt = $state<string | null>(null);
 
-	// Description header fields
-	let descName = $state(description.name);
-	let descLabel = $state(description.label);
-	let descTargetClass = $state(description.targetClass);
-	let descIdPrefix = $state(description.idPrefix);
-	let descNote = $state(description.note);
+	// Description header fields. Declared empty and populated by the
+	// $effect below — it runs on mount and whenever the description
+	// prop changes, so reading the prop here at init time would only
+	// capture a stale initial value (svelte: state_referenced_locally).
+	let descName = $state('');
+	let descLabel = $state('');
+	let descTargetClass = $state('');
+	let descIdPrefix = $state('');
+	let descNote = $state('');
 
 	// Sync local state when description prop changes
 	$effect(() => {
@@ -132,9 +141,8 @@
 		fieldErrors = { ...fieldErrors, [key]: validateField(field, value, ctx) };
 	}
 
-	function getCardinalityLabel(stmt: Statement): string {
-		if (stmt.min != null && stmt.min >= 1) return 'required';
-		return 'optional';
+	function isRequired(stmt: Statement): boolean {
+		return stmt.min != null && stmt.min >= 1;
 	}
 
 	function getCardinalityRange(stmt: Statement): string {
@@ -168,9 +176,26 @@
 			.map((d) => ({ name: d.name, label: d.label || d.name }));
 	}
 
+	/**
+	 * Statements where the user picked "structured" but hasn't added a
+	 * reference or class constraint yet. `'structured'` is a derived
+	 * display type (types/profile.ts) — it is never written into
+	 * `valueType` — so this transient flag keeps the selector showing
+	 * "structured" and the reference picker visible until the choice
+	 * materialises as `shapeRefs`/`classConstraint`.
+	 */
+	let structuredIntent = $state<Record<string, boolean>>({});
+
+	/** Display value type for the selector (includes derived 'structured'). */
+	function displayVT(stmt: Statement): string {
+		const dv = displayValueType(stmt);
+		if (dv === 'structured') return 'structured';
+		return structuredIntent[stmt.id] ? 'structured' : dv;
+	}
+
 	/** Whether the statement should show a shape reference selector. */
 	function isStructured(stmt: Statement): boolean {
-		return (stmt.shapeRefs?.length ?? 0) > 0 || stmt.valueType === 'structured' as string;
+		return displayVT(stmt) === 'structured';
 	}
 
 	const DATATYPE_OPTIONS = [
@@ -204,15 +229,19 @@
 
 	function handleStmtField(stmtId: string, field: keyof Statement, value: string) {
 		if (field === 'valueType') {
-			const updates: Partial<Statement> = { valueType: value as ValueType };
-			// When switching to 'structured', clear datatype; when switching away, clear shape refs
-			if (value === 'structured') {
-				updates.datatype = [];
-			} else {
-				updates.shapeRefs = [];
-				updates.classConstraint = [];
+			// 'structured' is never stored in valueType — the selection
+			// reveals the reference/class inputs (tracked via
+			// structuredIntent until a ref exists) and the display is
+			// derived from shapeRefs/classConstraint presence.
+			const sel = value as DisplayValueType;
+			if (sel === 'structured') {
+				structuredIntent = { ...structuredIntent, [stmtId]: true };
+			} else if (structuredIntent[stmtId]) {
+				const next = { ...structuredIntent };
+				delete next[stmtId];
+				structuredIntent = next;
 			}
-			updateStatement(description.id, stmtId, updates);
+			updateStatement(description.id, stmtId, valueTypeSelectionUpdates(sel));
 		} else {
 			updateStatement(description.id, stmtId, { [field]: value });
 		}
@@ -354,6 +383,7 @@
 		{@const isMatch = !!searchQuery && statementMatchesQuery(stmt, searchQuery)}
 		{@const isDimmed = !!searchQuery && !isMatch}
 		<div
+			role="listitem"
 			draggable="true"
 			ondragstart={(e) => drag.handleDragStart(e, i)}
 			ondragover={(e) => { drag.handleDragOver(e, i); dragOverIndex = i; }}
@@ -381,10 +411,10 @@
 					</div>
 					<div class="flex items-center gap-1.5 shrink-0">
 						<Badge
-							variant={getCardinalityLabel(stmt) === 'required' ? 'default' : 'secondary'}
+							variant={isRequired(stmt) ? 'default' : 'secondary'}
 							class="text-[10px] px-1.5 py-0 h-5"
 						>
-							{getCardinalityLabel(stmt)}
+							{isRequired(stmt) ? ui.required : ui.optional}
 						</Badge>
 						<Badge variant="outline" class="text-[10px] px-1.5 py-0 h-5 font-mono">
 							{getCardinalityRange(stmt)}
@@ -473,12 +503,12 @@
 						</FieldLabel>
 						<Select
 							type="single"
-							value={stmt.valueType}
+							value={displayVT(stmt)}
 							onValueChange={(v: string) => handleStmtField(stmt.id, 'valueType', v)}
 						>
 							<SelectTrigger class="h-7 text-xs">
 								{#snippet children()}
-									<span>{getValueTypeOptions().find(o => o.value === stmt.valueType)?.label || '(none)'}</span>
+									<span>{getValueTypeOptions().find(o => o.value === displayVT(stmt))?.label || '(none)'}</span>
 								{/snippet}
 							</SelectTrigger>
 							<SelectContent>
@@ -546,18 +576,18 @@
 							</Select>
 						</div>
 					{/if}
-					<!-- Shape references for SimpleDSP `structured` ValueType.
+					<!-- Reference picker for SimpleDSP `structured` ValueType.
 						 Mirrors the DCTAP valueShape field so users don't have
 						 to open the Constraint popover to pick a target.
-						 Note: `structured` is a SimpleDSP display type, not part
-						 of the Tapir internal ValueType union — hence the cast. -->
-					{#if flavor === 'simpledsp' && (stmt.valueType as string) === 'structured'}
+						 `structured` is a derived display type — never stored
+						 in valueType (see utils/editor-cells). -->
+					{#if flavor === 'simpledsp' && isStructured(stmt)}
 						<div class="grid gap-1">
 							<FieldLabel
 								class={labelClass}
 								help="Reference to another description template in this file (rendered as #blockId). Multiple chips express a union — yama-cli extension over the published spec."
 							>
-								Shape reference
+								{ui.shapeReferenceLabel}
 							</FieldLabel>
 							{#if getAvailableShapeRefs().length > 0}
 								<ShapeRefPicker
@@ -593,15 +623,13 @@
 								<!--
 									Constraint preview shows what would land in the file's
 									Constraint column *that isn't already visible elsewhere
-									on the card*. Datatype has its own field above, so we
-									don't mirror it here. For SimpleDSP `structured`, shape
-									refs are now shown in a dedicated field above, so we
-									skip them here too and surface class constraints or
-									the raw constraint fallback instead.
+									on the card*. Datatype has its own field above, and for
+									SimpleDSP `structured` (derived from refs) the shape
+									refs are shown in a dedicated field above, so neither
+									is mirrored here — class constraints and the raw
+									constraint fallback surface instead.
 								-->
-								{#if flavor === 'simpledsp' && (stmt.valueType as string) !== 'structured' && stmt.shapeRefs && stmt.shapeRefs.length > 0}
-									<span class="text-[var(--tapir-structured)]">{stmt.shapeRefs.map((r) => `#${r}`).join(' ')}</span>
-								{:else if stmt.values?.length > 0}
+								{#if stmt.values?.length > 0}
 									{#if flavor === 'dctap'}
 										{stmt.values.join(',')}
 									{:else}
@@ -673,7 +701,7 @@
 									const v = (e.target as HTMLSelectElement).value;
 									if (v === 'TRUE') updateStatement(description.id, stmt.id, { min: 1 });
 									else if (v === 'FALSE') updateStatement(description.id, stmt.id, { min: 0 });
-									else updateStatement(description.id, stmt.id, { min: null });
+									else updateStatement(description.id, stmt.id, { min: undefined }); // cleared → unset
 								}}
 								class="h-7 text-xs rounded-md border border-input bg-background px-2"
 							>
@@ -686,8 +714,8 @@
 								value={stmt.min != null ? String(stmt.min) : ''}
 								oninput={(e: Event) => {
 									const val = (e.target as HTMLInputElement).value;
-									const n = val === '' ? null : parseInt(val, 10);
-									updateStatement(description.id, stmt.id, { min: Number.isNaN(n) ? null : n });
+									const n = val === '' ? undefined : parseInt(val, 10);
+									updateStatement(description.id, stmt.id, { min: n != null && Number.isNaN(n) ? undefined : n });
 								}}
 								class="h-7 text-xs"
 								placeholder="0"
@@ -705,13 +733,16 @@
 							{labels.columns.max}
 						</FieldLabel>
 						{#if flavor === 'dctap'}
+							<!-- Tri-state max: undefined = unset (empty option),
+								 null = explicitly unbounded (TRUE), number = explicit.
+								 Legacy stored null keeps meaning "unbounded". -->
 							<select
-								value={stmt.max == null ? 'TRUE' : stmt.max > 1 ? 'TRUE' : 'FALSE'}
+								value={stmt.max === undefined ? '' : stmt.max === null || stmt.max > 1 ? 'TRUE' : 'FALSE'}
 								onchange={(e: Event) => {
 									const v = (e.target as HTMLSelectElement).value;
 									if (v === 'TRUE') updateStatement(description.id, stmt.id, { max: null });
 									else if (v === 'FALSE') updateStatement(description.id, stmt.id, { max: 1 });
-									else updateStatement(description.id, stmt.id, { max: null });
+									else updateStatement(description.id, stmt.id, { max: undefined }); // cleared → unset
 								}}
 								class="h-7 text-xs rounded-md border border-input bg-background px-2"
 							>
@@ -724,8 +755,8 @@
 								value={stmt.max != null ? String(stmt.max) : ''}
 								oninput={(e: Event) => {
 									const val = (e.target as HTMLInputElement).value;
-									const n = val === '' ? null : parseInt(val, 10);
-									updateStatement(description.id, stmt.id, { max: Number.isNaN(n) ? null : n });
+									const n = val === '' ? undefined : parseInt(val, 10);
+									updateStatement(description.id, stmt.id, { max: n != null && Number.isNaN(n) ? undefined : n });
 								}}
 								class="h-7 text-xs"
 								placeholder="*"

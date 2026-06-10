@@ -1,7 +1,15 @@
 <script lang="ts">
-	import type { Description, Flavor, Statement, ValueType } from '$lib/types';
-	import { getFlavorLabels } from '$lib/types';
+	import type { Description, Flavor, Statement } from '$lib/types';
+	import { getFlavorLabels, getEditorStrings } from '$lib/types';
 	import { resolveSimpleDspConstraint } from '$lib/converters/simpledsp-generator';
+	import {
+		displayValueType,
+		parseValueTypeCell,
+		valueTypeSelectionUpdates,
+		parseSimpleDspConstraintCell,
+		parseDctapConstraintCell,
+	} from '$lib/utils/editor-cells';
+	import { focusOnMount } from '$lib/utils/focus-on-mount';
 	import { addStatement, removeStatement, updateStatement, duplicateStatement, assistanceEnabled, currentProject, simpleDspLang } from '$lib/stores';
 	import PropertyAutocomplete from '$lib/components/vocab/property-autocomplete.svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -62,6 +70,7 @@
 	});
 
 	let labels = $derived(getFlavorLabels(flavor, $simpleDspLang));
+	let ui = $derived(getEditorStrings(flavor, $simpleDspLang));
 
 	/** Names of all description templates in the project (for shape ref dropdowns). */
 	let descriptionNames = $derived(
@@ -80,6 +89,8 @@
 	// Track which cell is being edited: `row-col` key
 	let editingCell = $state<string | null>(null);
 	let editValue = $state('');
+	/** Cell text at edit start — commit is a no-op when unchanged. */
+	let originalValue = $state('');
 	// True while we programmatically move the edit to another cell (Tab/Enter
 	// navigation). Tearing down the old input fires a trailing `onblur`; without
 	// this flag that blur re-runs commitEdit() against the shared editValue that
@@ -137,22 +148,23 @@
 				{ key: 'actions', header: '', field: 'actions', width: 'w-[40px]' },
 			];
 		}
-		// SimpleDSP
+		// SimpleDSP — help strings come from the centralized editor
+		// strings so the JP toggle localizes them (no-mixing rule).
 		return [
 			{ key: 'name', header: labels.columns.name, field: 'label', width: 'w-[120px]',
-				help: 'Name for this statement template. Required — used to build the statement URI.' },
+				help: ui.columnHelp.name },
 			{ key: 'property', header: labels.columns.property, field: 'propertyId', width: 'w-[130px]', mono: true,
-				help: 'The RDF property this statement constrains, written as a prefixed term (e.g. dcterms:title).' },
+				help: ui.columnHelp.property },
 			{ key: 'min', header: labels.columns.min, field: 'min', width: 'w-[55px]',
-				help: 'Minimum cardinality. 0 = optional, 1 = required, n = at least n values.' },
+				help: ui.columnHelp.min },
 			{ key: 'max', header: labels.columns.max, field: 'max', width: 'w-[55px]',
-				help: 'Maximum cardinality. 1 = at most one, n = up to n, dash (-) = unbounded.' },
+				help: ui.columnHelp.max },
 			{ key: 'valueType', header: labels.columns.valueType, field: 'valueType', width: 'w-[90px]',
-				help: 'Is the value a literal (text/number/date), a reference (IRI), or a structured record? Determines how the Constraint cell is interpreted.' },
+				help: ui.columnHelp.valueType },
 			{ key: 'constraint', header: labels.columns.constraint, field: 'constraint', width: 'w-[130px]', mono: true,
-				help: 'Additional restriction. Interpretation depends on ValueType: datatype for literal, #blockId or class for structured, vocabulary prefix or URI list for reference.' },
+				help: ui.columnHelp.constraint },
 			{ key: 'note', header: labels.columns.note, field: 'note', width: 'w-[140px]',
-				help: 'Free-text comment about this statement template.' },
+				help: ui.columnHelp.note },
 			{ key: 'actions', header: '', field: 'actions', width: 'w-[40px]' },
 		];
 	});
@@ -167,8 +179,10 @@
 		}
 		if (col.field === 'max') {
 			if (flavor === 'dctap') {
-				if (stmt.min == null && stmt.max == null) return '';
-				return stmt.max == null ? 'TRUE' : stmt.max > 1 ? 'TRUE' : 'FALSE';
+				// Tri-state: undefined = unset (empty cell), null =
+				// explicitly unbounded (TRUE), number = explicit.
+				if (stmt.max === undefined) return '';
+				return stmt.max === null || stmt.max > 1 ? 'TRUE' : 'FALSE';
 			}
 			return stmt.max != null ? String(stmt.max) : '';
 		}
@@ -177,11 +191,12 @@
 				const map: Record<string, string> = { literal: 'literal', iri: 'IRI', bnode: 'bnode' };
 				return map[stmt.valueType] || '';
 			}
-			// SimpleDSP display value types
-			if (stmt.shapeRefs && stmt.shapeRefs.length > 0) return labels.valueTypes.structured;
-			if (stmt.classConstraint.length > 0) return labels.valueTypes.structured;
-			if (stmt.valueType === 'iri') return labels.valueTypes.iri;
-			if (stmt.valueType === 'literal') return labels.valueTypes.literal;
+			// SimpleDSP display value types ('structured' is derived from
+			// shapeRefs/classConstraint presence — see utils/editor-cells)
+			const dv = displayValueType(stmt);
+			if (dv === 'structured') return labels.valueTypes.structured;
+			if (dv === 'iri') return labels.valueTypes.iri;
+			if (dv === 'literal') return labels.valueTypes.literal;
 			return '';
 		}
 		if (col.field === 'constraint') {
@@ -219,9 +234,10 @@
 	}
 
 	function getValueTypeColor(stmt: Statement): string {
-		if ((stmt.shapeRefs && stmt.shapeRefs.length > 0) || stmt.classConstraint.length > 0) return 'text-[var(--tapir-structured)]';
-		if (stmt.valueType === 'literal') return 'text-[var(--tapir-literal)]';
-		if (stmt.valueType === 'iri') return 'text-[var(--tapir-iri)]';
+		const dv = displayValueType(stmt);
+		if (dv === 'structured') return 'text-[var(--tapir-structured)]';
+		if (dv === 'literal') return 'text-[var(--tapir-literal)]';
+		if (dv === 'iri') return 'text-[var(--tapir-iri)]';
 		return '';
 	}
 
@@ -235,12 +251,21 @@
 		const key = `${rowIndex}-${colIndex}`;
 		editingCell = key;
 		editValue = getCellValue(stmt, col);
+		originalValue = editValue;
 	}
 
 	function commitEdit(stmt: Statement, col: ColumnDef) {
 		if (!editingCell || col.field === 'actions') return;
 
 		const val = editValue;
+
+		// Unchanged → no-op. Without this, blurring a cell whose display
+		// is composed (localized value types, the Constraint column)
+		// would re-parse the display text and corrupt the source fields.
+		if (val === originalValue) {
+			editingCell = null;
+			return;
+		}
 
 		if (col.field === 'min') {
 			if (flavor === 'dctap') {
@@ -250,60 +275,60 @@
 				} else if (upper === 'FALSE') {
 					updateStatement(description.id, stmt.id, { min: 0 });
 				} else {
-					updateStatement(description.id, stmt.id, { min: null });
+					// Cleared → undefined (unset)
+					updateStatement(description.id, stmt.id, { min: undefined });
 				}
 			} else {
-				const n = val === '' ? null : parseInt(val, 10);
-				updateStatement(description.id, stmt.id, { min: Number.isNaN(n) ? null : n });
+				const n = val === '' ? undefined : parseInt(val, 10);
+				updateStatement(description.id, stmt.id, { min: n != null && Number.isNaN(n) ? undefined : n });
 			}
 		} else if (col.field === 'max') {
 			if (flavor === 'dctap') {
+				// Tri-state max: TRUE → null (explicitly unbounded),
+				// FALSE → 1, cleared → undefined (unset). Legacy stored
+				// null values keep meaning "unbounded" — no migration.
 				const upper = val.toUpperCase();
 				if (upper === 'TRUE') {
 					updateStatement(description.id, stmt.id, { max: null });
 				} else if (upper === 'FALSE') {
 					updateStatement(description.id, stmt.id, { max: 1 });
 				} else {
-					updateStatement(description.id, stmt.id, { max: null });
+					updateStatement(description.id, stmt.id, { max: undefined });
 				}
 			} else {
-				const n = val === '' ? null : parseInt(val, 10);
-				updateStatement(description.id, stmt.id, { max: Number.isNaN(n) ? null : n });
+				const n = val === '' ? undefined : parseInt(val, 10);
+				updateStatement(description.id, stmt.id, { max: n != null && Number.isNaN(n) ? undefined : n });
 			}
 		} else if (col.field === 'valueType') {
-			// Map display strings back to internal values
-			const reverseMap: Record<string, ValueType> = {
-				literal: 'literal',
-				iri: 'iri',
-				IRI: 'iri',
-				bnode: 'bnode',
-			};
-			// Also check flavor labels
-			const revFlavorMap: Record<string, ValueType> = {};
-			revFlavorMap[labels.valueTypes.literal] = 'literal';
-			revFlavorMap[labels.valueTypes.iri] = 'iri';
-			revFlavorMap[labels.valueTypes.bnode] = 'bnode';
-			const mapped = reverseMap[val] || revFlavorMap[val] || ('' as ValueType);
-			updateStatement(description.id, stmt.id, { valueType: mapped });
-		} else if (col.field === 'constraint') {
-			if (val.startsWith('#')) {
-				// Support single or space-separated multi-ref: "#A #B"
-				const refs = val
-					.split(/\s+/)
-					.filter((s) => s.startsWith('#'))
-					.map((s) => s.slice(1))
-					.filter(Boolean);
-				updateStatement(description.id, stmt.id, { shapeRefs: refs, constraint: '' });
-			} else {
-				if (flavor === 'simpledsp' && !val.startsWith('#') && stmt.valueType === 'literal') {
-					updateStatement(description.id, stmt.id, {
-						datatype: val.split(/\s+/).filter(Boolean),
-						constraint: '',
-					});
-				} else {
-					updateStatement(description.id, stmt.id, { constraint: val });
-				}
+			// Parse display strings (EN + localized JP labels) back to the
+			// internal value type via the shared mapping.
+			const parsed = parseValueTypeCell(val);
+			if (parsed === null) {
+				// Unrecognised input never wipes the stored value.
+				editingCell = null;
+				return;
 			}
+			updateStatement(description.id, stmt.id, valueTypeSelectionUpdates(parsed));
+			if (
+				parsed === 'structured' &&
+				flavor === 'simpledsp' &&
+				!(stmt.shapeRefs?.length || stmt.classConstraint?.length)
+			) {
+				// 'structured' is derived from refs; with none set yet the
+				// selection would otherwise display as empty. Open the
+				// constraint popover so the user can pick the target.
+				const rowIdx = description.statements.findIndex((s) => s.id === stmt.id);
+				if (rowIdx >= 0) constraintPopoverRow = `${rowIdx}`;
+			}
+		} else if (col.field === 'constraint') {
+			// Parse the composed display back with the same precedence the
+			// display used (see utils/editor-cells) so a constraint
+			// sourced from classConstraint/inScheme/values returns to its
+			// field instead of being dumped into `constraint`/`datatype`.
+			const updates = flavor === 'simpledsp'
+				? parseSimpleDspConstraintCell(val, stmt)
+				: parseDctapConstraintCell(val, stmt);
+			updateStatement(description.id, stmt.id, updates);
 		} else if (col.field === 'datatype') {
 			// Free-text edit of valueDataType: split on whitespace so
 			// multi-datatype profiles (DCMI SRAP, SimpleDSP) survive a
@@ -382,10 +407,10 @@
 			{:else}
 				<ToggleLeft class="h-5 w-5 text-muted-foreground" />
 			{/if}
-			<span class="font-medium {$assistanceEnabled ? 'text-foreground' : 'text-muted-foreground'}">Assistance</span>
+			<span class="font-medium {$assistanceEnabled ? 'text-foreground' : 'text-muted-foreground'}">{ui.assistance}</span>
 		</button>
 		<span class="text-xs text-muted-foreground truncate">
-			Auto-suggestions &middot; vocabulary lookup &middot; constraint validation
+			{ui.assistanceHint}
 		</span>
 	</div>
 
@@ -525,7 +550,7 @@
 												commitEdit(stmt, col);
 											}}
 											onblur={() => { if (!suppressBlurCommit) commitEdit(stmt, col); }}
-											autofocus
+											use:focusOnMount
 										>
 											{#if flavor === 'dctap'}
 												<option value="">(empty)</option>
@@ -549,7 +574,7 @@
 												commitEdit(stmt, col);
 											}}
 											onblur={() => { if (!suppressBlurCommit) commitEdit(stmt, col); }}
-											autofocus
+											use:focusOnMount
 										>
 											<option value="">(empty)</option>
 											<option value="TRUE">TRUE</option>
@@ -565,7 +590,7 @@
 												commitEdit(stmt, col);
 											}}
 											onblur={() => { if (!suppressBlurCommit) commitEdit(stmt, col); }}
-											autofocus
+											use:focusOnMount
 										>
 											<option value="">(empty)</option>
 											<option value="TRUE">TRUE</option>
@@ -581,7 +606,7 @@
 												commitEdit(stmt, col);
 											}}
 											onblur={() => { if (!suppressBlurCommit) commitEdit(stmt, col); }}
-											autofocus
+											use:focusOnMount
 										>
 											<option value="">(none)</option>
 											<option value="picklist">picklist</option>
@@ -601,7 +626,7 @@
 											onblur={() => { if (!suppressBlurCommit) commitEdit(stmt, col); }}
 											onkeydown={(e: KeyboardEvent) => handleKeydown(e, stmt, col, rowIndex, colIndex)}
 											class="w-full h-7 px-1.5 text-xs bg-background border border-ring rounded focus:outline-none focus:ring-1 focus:ring-ring {col.mono ? 'font-mono' : ''}"
-											autofocus
+											use:focusOnMount
 										/>
 									{/if}
 								</td>
@@ -669,7 +694,7 @@
 	{#if description.statements.length === 0}
 		<div class="flex items-center justify-center py-8">
 			<p class="text-sm text-muted-foreground">
-				No {labels.statementPlural.toLowerCase()} yet. Click the + row above to add one.
+				{ui.noStatementsYet}
 			</p>
 		</div>
 	{/if}
