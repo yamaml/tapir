@@ -39,8 +39,10 @@ describe('buildDataPackageObject', () => {
 		];
 		const pkg = buildDataPackageObject(project);
 		expect(pkg.resources).toHaveLength(2);
-		expect(pkg.resources[0].name).toBe('Person');
-		expect(pkg.resources[1].name).toBe('Book');
+		// Resource names are normalised to the Frictionless name pattern
+		// (lowercase alphanumerics plus ._-).
+		expect(pkg.resources[0].name).toBe('person');
+		expect(pkg.resources[1].name).toBe('book');
 	});
 
 	it('sets resource title from description label', () => {
@@ -393,7 +395,7 @@ describe('buildDataPackage', () => {
 
 		expect(pkg.id).toBe('http://example.org/');
 		expect(pkg.resources).toHaveLength(1);
-		expect(pkg.resources[0].name).toBe('Person');
+		expect(pkg.resources[0].name).toBe('person');
 		expect(pkg.resources[0].title).toBe('Person');
 		expect(pkg.resources[0].schema.fields).toHaveLength(2);
 		expect(pkg.resources[0].schema.fields[0].type).toBe('string');

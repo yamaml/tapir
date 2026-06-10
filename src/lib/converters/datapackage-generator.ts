@@ -5,6 +5,15 @@
  * descriptor (`datapackage.json`). Maps YAMA application profile
  * concepts to Data Package resources, fields, and constraints.
  *
+ * **Scope note — this is a schema-skeleton export.** YAMAML spec §7.7
+ * derives resources from *data sources* (`data:`/`mapping:` blocks):
+ * resource paths, field names from `mapping.path`, and `primaryKey`
+ * from the id mapping. Tapir profiles carry no data mappings, so this
+ * export deliberately diverges from §7.7: it emits one table resource
+ * per description with `propertyId`-derived field names and no
+ * `path`/`primaryKey`. Use yama-cli for spec-§7.7 packages when a
+ * profile has data mappings.
+ *
  * Tapir-to-Data Package mapping:
  *
  * | Tapir element            | Data Package                          |
@@ -31,6 +40,7 @@
  */
 
 import type { TapirProject, Description, Statement } from '$lib/types';
+import type { GeneratorWarning } from '$lib/types/export';
 
 // ── XSD-to-Frictionless Type Mapping ────────────────────────────
 
@@ -70,11 +80,21 @@ const XSD_TYPE_MAP: Record<string, { type: string; format?: string }> = {
  * @param stmt - The statement to resolve.
  * @returns An object with `type` and optionally `format`.
  */
-function resolveFieldType(stmt: Statement): { type: string; format?: string } {
+function resolveFieldType(
+	stmt: Statement,
+	warnings?: GeneratorWarning[]
+): { type: string; format?: string } {
 	// Frictionless permits one type per field; for multi-datatype, the
-	// first is emitted. Lossy by construction — multi-datatype warnings
-	// surface via collectMultiDatatypeWarnings on the package as a whole.
+	// first is emitted and the truncation is reported as a warning.
 	const datatypes = stmt.datatype ?? [];
+	if (datatypes.length > 1) {
+		warnings?.push({
+			message: `Field "${stmt.propertyId || stmt.id}": Frictionless allows one type per field — kept "${datatypes[0]}", dropped ${datatypes
+				.slice(1)
+				.map((d) => `"${d}"`)
+				.join(', ')}`,
+		});
+	}
 	const first = datatypes[0];
 	if (first) {
 		const local = first.includes(':') ? first.split(':').pop()! : first;
@@ -161,10 +181,11 @@ interface DataPackageField {
  * Converts a statement to a Frictionless field descriptor.
  *
  * @param stmt - The statement to convert.
+ * @param warnings - Optional accumulator for lossy-mapping warnings.
  * @returns A field descriptor.
  */
-function buildField(stmt: Statement): DataPackageField {
-	const fieldType = resolveFieldType(stmt);
+function buildField(stmt: Statement, warnings?: GeneratorWarning[]): DataPackageField {
+	const fieldType = resolveFieldType(stmt, warnings);
 	const field: DataPackageField = {
 		name: stmt.propertyId || stmt.id,
 		type: fieldType.type,
@@ -204,16 +225,39 @@ interface DataPackageResource {
 }
 
 /**
+ * Normalises a description name to the Frictionless resource-name
+ * pattern: lowercase alphanumerics plus `.`, `_`, `-`. Characters
+ * outside the set (CJK, spaces, etc.) become hyphens; an empty result
+ * falls back to `resource`.
+ *
+ * @param name - The raw description name (e.g. `MAIN`, `著作`).
+ * @returns A pattern-conforming resource name.
+ */
+export function normaliseResourceName(name: string): string {
+	const normalised = name
+		.toLowerCase()
+		.replace(/[^a-z0-9._-]+/g, '-')
+		.replace(/^[-.]+|[-.]+$/g, '');
+	return normalised || 'resource';
+}
+
+/**
  * Converts a description to a Frictionless resource descriptor.
  *
  * Each Description becomes one resource with its statements as fields.
  *
  * @param desc - The description to convert.
+ * @param name - The (normalised, de-duplicated) resource name.
+ * @param warnings - Optional accumulator for lossy-mapping warnings.
  * @returns A resource descriptor.
  */
-function buildResource(desc: Description): DataPackageResource {
+function buildResource(
+	desc: Description,
+	name: string,
+	warnings?: GeneratorWarning[]
+): DataPackageResource {
 	const resource: DataPackageResource = {
-		name: desc.name,
+		name,
 		type: 'table',
 		schema: {
 			fields: [],
@@ -229,7 +273,7 @@ function buildResource(desc: Description): DataPackageResource {
 	}
 
 	for (const stmt of desc.statements) {
-		resource.schema.fields.push(buildField(stmt));
+		resource.schema.fields.push(buildField(stmt, warnings));
 	}
 
 	return resource;
@@ -246,17 +290,24 @@ interface DataPackageDescriptor {
 /**
  * Builds a Frictionless Data Package descriptor from a `TapirProject`.
  *
- * Each description in the project becomes a resource. The project's
- * base IRI is used as the package `id`.
+ * Each description in the project becomes a resource. Resource names
+ * are normalised to the Frictionless name pattern and de-duplicated
+ * with a numeric suffix; the project's base IRI is used as the
+ * package `id`.
  *
  * @param project - The Tapir project to export.
+ * @param warnings - Optional accumulator for lossy-mapping warnings
+ *   (multi-datatype truncation, renamed resources).
  * @returns A Data Package descriptor (JSON-serializable).
  *
  * @example
  * const pkg = buildDataPackageObject(project);
  * console.log(JSON.stringify(pkg, null, 2));
  */
-export function buildDataPackageObject(project: TapirProject): DataPackageDescriptor {
+export function buildDataPackageObject(
+	project: TapirProject,
+	warnings?: GeneratorWarning[]
+): DataPackageDescriptor {
 	const pkg: DataPackageDescriptor = {
 		resources: [],
 	};
@@ -265,8 +316,21 @@ export function buildDataPackageObject(project: TapirProject): DataPackageDescri
 		pkg.id = project.base;
 	}
 
+	const usedNames = new Set<string>();
 	for (const desc of project.descriptions) {
-		pkg.resources.push(buildResource(desc));
+		let name = normaliseResourceName(desc.name);
+		if (name !== desc.name) {
+			warnings?.push({
+				message: `Resource name "${desc.name}" was normalised to "${name}" (Frictionless names allow lowercase alphanumerics plus ._-)`,
+			});
+		}
+		if (usedNames.has(name)) {
+			let n = 2;
+			while (usedNames.has(`${name}-${n}`)) n++;
+			name = `${name}-${n}`;
+		}
+		usedNames.add(name);
+		pkg.resources.push(buildResource(desc, name, warnings));
 	}
 
 	return pkg;
@@ -279,13 +343,18 @@ export function buildDataPackageObject(project: TapirProject): DataPackageDescri
  *
  * @param project - The Tapir project to export.
  * @param indent - JSON indentation (defaults to 2 spaces).
+ * @param warnings - Optional accumulator for lossy-mapping warnings.
  * @returns Data Package JSON string.
  *
  * @example
  * const json = buildDataPackage(project);
  * console.log(json);
  */
-export function buildDataPackage(project: TapirProject, indent: number = 2): string {
-	const pkg = buildDataPackageObject(project);
+export function buildDataPackage(
+	project: TapirProject,
+	indent: number = 2,
+	warnings?: GeneratorWarning[]
+): string {
+	const pkg = buildDataPackageObject(project, warnings);
 	return JSON.stringify(pkg, null, indent);
 }
