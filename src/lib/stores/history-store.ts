@@ -7,8 +7,11 @@
  *
  * Usage: `pushUndo()` is called BEFORE every mutation by the
  * project-store mutation helpers, so components never need to call it
- * directly. `undo()` / `redo()` navigate the stack; `clearHistory()`
- * resets it on editor mount and project switch.
+ * directly. `undo()` / `redo()` navigate the stack. `clearHistory()`
+ * MUST be called before loading a different project — undo entries
+ * are per-project, and a stale stack would restore one project's
+ * state into another. The editor route does this on both mount and
+ * destroy.
  *
  * Snapshots are stored as JSON strings: this gives free deep-cloning
  * (Svelte 5 proxies cannot be `structuredClone`d), cheap top-of-stack

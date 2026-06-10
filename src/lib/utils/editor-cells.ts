@@ -44,6 +44,11 @@ export function displayValueType(stmt: Statement): DisplayValueType {
  * lowercase; covers the internal names, SimpleDSP English labels,
  * the Japanese labels (文字列/参照値/構造化/制約なし), the `URI`
  * alias, and the editors' empty-state placeholders.
+ *
+ * The lowercase '参照値(uri)' key exists to cover case-folded
+ * '参照値(URI)' display variants (inputs are lowercased before
+ * lookup). Display paths currently emit plain '参照値' without the
+ * suffix, so the key is purely defensive for pasted or legacy text.
  */
 const VALUE_TYPE_INPUTS: Record<string, DisplayValueType> = {
 	'': '',
