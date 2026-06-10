@@ -68,7 +68,9 @@ interface RawYamaStatement {
 	property?: string;
 	label?: string;
 	min?: number;
-	max?: number;
+	max?: number | null;
+	/** Cardinality keyword (e.g. SimpleDSP `推奨`/recommended). */
+	cardinalityNote?: string;
 	type?: string;
 	/** Datatype(s). Accepts scalar or array — legacy single-datatype
 	 * YAML emits a string; multi-datatype emits a sequence. */
@@ -79,10 +81,14 @@ interface RawYamaStatement {
 	a?: string | string[];
 	/** Vocabulary scheme constraint(s). Scalar or array in YAML. */
 	inScheme?: string | string[];
+	/** Language tag constraint(s) — DCTAP `languageTag` extension. */
+	languageTag?: string | string[];
 	values?: string[];
 	pattern?: string;
 	note?: string;
 	facets?: Record<string, number>;
+	/** Data-mapping block — not modelled by Tapir (loss warning). */
+	mapping?: unknown;
 }
 
 /** Raw YAMA description as parsed from YAML. */
@@ -93,6 +99,8 @@ interface RawYamaDescription {
 	closed?: boolean;
 	id?: { prefix?: string };
 	statements?: Record<string, RawYamaStatement>;
+	/** Data-mapping block — not modelled by Tapir (loss warning). */
+	mapping?: unknown;
 }
 
 /** Raw YAMA document as parsed from YAML. */
@@ -100,6 +108,10 @@ interface RawYamaDocument {
 	base?: string;
 	namespaces?: Record<string, string>;
 	descriptions?: Record<string, RawYamaDescription>;
+	/** Mapping defaults — not modelled by Tapir (loss warning). */
+	defaults?: unknown;
+	/** Inline data records — not modelled by Tapir (loss warning). */
+	data?: unknown;
 }
 
 // ── Value Type Resolution ───────────────────────────────────────
@@ -151,15 +163,19 @@ function convertStatement(key: string, raw: RawYamaStatement): Statement {
 		}
 	}
 
-	return createStatement({
+	// languageTag (DCTAP extension) rides in `values` with the
+	// constraintType marker, mirroring the DCTAP importer.
+	const languageTags = toStringArray(raw.languageTag);
+
+	const stmt = createStatement({
 		id: key,
 		label: raw.label || '',
 		propertyId: raw.property || '',
-		min: raw.min ?? null,
-		max: raw.max ?? null,
+		cardinalityNote: typeof raw.cardinalityNote === 'string' ? raw.cardinalityNote : '',
 		valueType: resolveValueType(raw.type),
 		datatype: toStringArray(raw.datatype),
-		values: Array.isArray(raw.values) ? raw.values : [],
+		values: languageTags.length > 0 ? languageTags : Array.isArray(raw.values) ? raw.values : [],
+		constraintType: languageTags.length > 0 ? 'languageTag' : '',
 		pattern: raw.pattern || '',
 		shapeRefs: toStringArray(raw.description),
 		classConstraint: toStringArray(raw.a),
@@ -167,6 +183,12 @@ function convertStatement(key: string, raw: RawYamaStatement): Statement {
 		note: raw.note || '',
 		facets,
 	});
+	// min/max: keep absent fields absent (undefined = unspecified);
+	// an explicit `max: null` would be unusual YAML but reads as
+	// unbounded, matching the internal model.
+	if (raw.min !== undefined && raw.min !== null) stmt.min = raw.min;
+	if (raw.max !== undefined) stmt.max = raw.max;
+	return stmt;
 }
 
 // ── Description Converter ───────────────────────────────────────
@@ -244,6 +266,20 @@ export function parseYamaYaml(
 		};
 	}
 
+	// Deferred YAMAML features — warn instead of dropping silently.
+	if (doc.defaults !== undefined) {
+		warnings.push({
+			field: 'defaults',
+			message: "The 'defaults:' block (mapping defaults) is not supported by Tapir and was dropped",
+		});
+	}
+	if (doc.data !== undefined) {
+		warnings.push({
+			field: 'data',
+			message: "The 'data:' block (inline records) is not supported by Tapir and was dropped",
+		});
+	}
+
 	// Extract top-level fields
 	const base = doc.base || '';
 	const namespaces: NamespaceMap = doc.namespaces || {};
@@ -263,6 +299,20 @@ export function parseYamaYaml(
 				message: `Description "${descName}" is not a valid mapping — skipped`,
 			});
 			continue;
+		}
+		if (descDef.mapping !== undefined) {
+			warnings.push({
+				field: descName,
+				message: `Description "${descName}": 'mapping:' blocks (RDF generation) are not supported by Tapir and were dropped`,
+			});
+		}
+		for (const [stmtKey, stmtDef] of Object.entries(descDef.statements || {})) {
+			if (stmtDef && typeof stmtDef === 'object' && stmtDef.mapping !== undefined) {
+				warnings.push({
+					field: `${descName}.${stmtKey}`,
+					message: `Statement "${stmtKey}" in "${descName}": 'mapping:' blocks are not supported by Tapir and were dropped`,
+				});
+			}
 		}
 		descriptions.push(convertDescription(descName, descDef));
 	}

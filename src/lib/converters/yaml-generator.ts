@@ -73,6 +73,9 @@ function serializeStatement(stmt: Statement): Record<string, unknown> {
 	if (stmt.label) obj.label = stmt.label;
 	if (stmt.min != null) obj.min = stmt.min;
 	if (stmt.max != null) obj.max = stmt.max;
+	// Cardinality keyword (e.g. SimpleDSP 推奨) — without this the
+	// keyword dies passing through the canonical YAML format.
+	if (stmt.cardinalityNote) obj.cardinalityNote = stmt.cardinalityNote;
 
 	const yamaType = resolveYamaType(stmt.valueType);
 	if (yamaType) obj.type = yamaType;
@@ -101,8 +104,16 @@ function serializeStatement(stmt: Statement): Record<string, unknown> {
 		obj.inScheme = stmt.inScheme.length === 1 ? stmt.inScheme[0] : stmt.inScheme;
 	}
 
+	// Language-tag constraints (DCTAP extension) ride in `values` with
+	// the `languageTag` constraintType marker; serialise them under a
+	// dedicated `languageTag` key (scalar-or-array) so they survive the
+	// canonical format, mirroring yama-cli.
 	if (Array.isArray(stmt.values) && stmt.values.length > 0) {
-		obj.values = stmt.values;
+		if ((stmt.constraintType || '').toLowerCase() === 'languagetag') {
+			obj.languageTag = stmt.values.length === 1 ? stmt.values[0] : stmt.values;
+		} else {
+			obj.values = stmt.values;
+		}
 	}
 
 	if (stmt.pattern) obj.pattern = stmt.pattern;
@@ -158,16 +169,18 @@ function serializeDescription(desc: Description): Record<string, unknown> {
 // ── Main Generator ──────────────────────────────────────────────
 
 /**
- * Generates YAMA YAML output from a `TapirProject`.
+ * Builds the YAMA document object for a `TapirProject` — the shared
+ * structure behind both the YAML and JSON exports. Keeping a single
+ * builder guarantees the two formats never diverge in field coverage.
  *
- * @param project - The Tapir project to export.
- * @returns YAMA YAML string.
+ * @param project - The Tapir project to serialize.
+ * @returns A plain object mirroring the YAMA YAML document layout.
  *
  * @example
- * const yaml = buildYamaYaml(project);
- * console.log(yaml);
+ * const doc = buildYamaDocumentObject(project);
+ * JSON.stringify(doc, null, 2);
  */
-export function buildYamaYaml(project: TapirProject): string {
+export function buildYamaDocumentObject(project: TapirProject): Record<string, unknown> {
 	const doc: Record<string, unknown> = {};
 
 	if (project.base) {
@@ -189,7 +202,21 @@ export function buildYamaYaml(project: TapirProject): string {
 		doc.descriptions = descs;
 	}
 
-	return yamlStringify(doc, {
+	return doc;
+}
+
+/**
+ * Generates YAMA YAML output from a `TapirProject`.
+ *
+ * @param project - The Tapir project to export.
+ * @returns YAMA YAML string.
+ *
+ * @example
+ * const yaml = buildYamaYaml(project);
+ * console.log(yaml);
+ */
+export function buildYamaYaml(project: TapirProject): string {
+	return yamlStringify(buildYamaDocumentObject(project), {
 		indent: 2,
 		lineWidth: 0,
 		defaultKeyType: 'PLAIN',

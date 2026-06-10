@@ -193,7 +193,7 @@ descriptions:
 		expect(result.data.descriptions[1].name).toBe('book');
 	});
 
-	it('handles null min/max as null', () => {
+	it('leaves absent min/max unset (undefined)', () => {
 		const yaml = `
 descriptions:
   person:
@@ -203,8 +203,8 @@ descriptions:
 `;
 		const result = parseYamaYaml(yaml);
 		const stmt = result.data.descriptions[0].statements[0];
-		expect(stmt.min).toBeNull();
-		expect(stmt.max).toBeNull();
+		expect(stmt.min).toBeUndefined();
+		expect(stmt.max).toBeUndefined();
 	});
 
 	it('parses the manga example structure', () => {
@@ -258,6 +258,6 @@ descriptions:
 		expect(author.shapeRefs).toEqual(['creator']);
 		expect(author.valueType).toBe('iri');
 		expect(author.min).toBe(1);
-		expect(author.max).toBeNull();
+		expect(author.max).toBeUndefined();
 	});
 });
