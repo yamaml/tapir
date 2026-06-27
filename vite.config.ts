@@ -41,6 +41,14 @@ export default defineConfig({
 				globPatterns: [
 					'**/*.{js,css,html,svg,png,webmanifest,ttf,woff2,json}'
 				],
+				// Do NOT precache SvelteKit's version manifest. It is the
+				// file the native `updated` poll fetches (with no-cache) to
+				// detect a new deploy; if the service worker precached it,
+				// the SW would serve the OLD version.json from cache and the
+				// poll could never see an update — the exact stale-version
+				// trap (worst in Safari). Leaving it un-precached lets every
+				// poll reach the network.
+				globIgnores: ['**/_app/version.json'],
 				// 10 MB file cap: the PDF-export chunk (jspdf +
 				// svg2pdf) is large enough to exceed the Workbox
 				// default of 2 MB. Bumping the ceiling keeps the
@@ -55,7 +63,10 @@ export default defineConfig({
 				// GitHub Pages when the SW isn't yet installed — so
 				// both online and offline deep-link paths converge.
 				navigateFallback: '/tapir/',
-				navigateFallbackDenylist: [/^\/api\//],
+				// Keep version.json (and any /api/) off the SPA fallback so
+				// the version poll always reaches the network rather than
+				// being answered with the cached app shell.
+				navigateFallbackDenylist: [/^\/api\//, /version\.json$/],
 				cleanupOutdatedCaches: true
 			},
 			devOptions: {
