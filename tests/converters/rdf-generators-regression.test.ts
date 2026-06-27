@@ -49,7 +49,7 @@ describe('standard prefix fallback in RDF generators (S1)', () => {
 			statements: [
 				createStatement({
 					propertyId: 'dcterms:title',
-					valueType: 'literal',
+					valueType: ['literal'],
 					datatype: ['xsd:string'],
 					min: 1,
 					max: 1,
@@ -111,7 +111,7 @@ describe('IRI value sets (S4 / DECISION 5)', () => {
 				statements: [
 					createStatement({
 						propertyId: 'dcterms:type',
-						valueType: 'iri',
+						valueType: ['iri'],
 						values: ['foaf:Person', 'http://example.org/Agent'],
 					}),
 				],
@@ -137,7 +137,7 @@ describe('IRI value sets (S4 / DECISION 5)', () => {
 				statements: [
 					createStatement({
 						propertyId: 'ex:status',
-						valueType: 'literal',
+						valueType: ['literal'],
 						values: ['active', 'inactive'],
 					}),
 				],
@@ -223,7 +223,7 @@ describe('SHACL constraint mapping coverage', () => {
 				statements: [
 					createStatement({
 						propertyId: 'dcterms:subject',
-						valueType: 'iri',
+						valueType: ['iri'],
 						inScheme: ['ndlsh:'],
 					}),
 				],
@@ -257,12 +257,12 @@ describe('OWL-DSP statement IRIs (DECISION 22)', () => {
 					createStatement({
 						label: 'Creator',
 						propertyId: 'dcterms:creator',
-						valueType: 'iri',
+						valueType: ['iri'],
 					}),
 					createStatement({
 						label: 'Creator',
 						propertyId: 'dcterms:creator',
-						valueType: 'literal',
+						valueType: ['literal'],
 					}),
 				],
 			}),
@@ -330,7 +330,7 @@ describe('ShEx structural validity', () => {
 				name: 'S',
 				targetClass: 'http://example.org/Type',
 				statements: [
-					createStatement({ propertyId: 'http://example.org/prop', valueType: 'literal' }),
+					createStatement({ propertyId: 'http://example.org/prop', valueType: ['literal'] }),
 				],
 			}),
 		];
@@ -357,7 +357,7 @@ describe('ShEx structural validity', () => {
 		project.descriptions = [
 			createDescription({
 				name: 'S',
-				statements: [createStatement({ propertyId: 'dcterms:title', valueType: 'literal' })],
+				statements: [createStatement({ propertyId: 'dcterms:title', valueType: ['literal'] })],
 			}),
 		];
 		const shex = buildShExC(project);

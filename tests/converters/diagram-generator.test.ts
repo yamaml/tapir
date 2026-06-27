@@ -121,12 +121,12 @@ describe('typeLabel', () => {
 	});
 
 	it('returns URI for iri valueType', () => {
-		const stmt = createStatement({ valueType: 'iri' });
+		const stmt = createStatement({ valueType: ['iri'] });
 		expect(typeLabel(stmt, ns)).toBe('URI');
 	});
 
 	it('returns Literal for literal valueType', () => {
-		const stmt = createStatement({ valueType: 'literal' });
+		const stmt = createStatement({ valueType: ['literal'] });
 		expect(typeLabel(stmt, ns)).toBe('Literal');
 	});
 
@@ -162,7 +162,7 @@ describe('buildDot', () => {
 					createStatement({
 						id: 'name',
 						propertyId: 'foaf:name',
-						valueType: 'literal',
+						valueType: ['literal'],
 						datatype: ['xsd:string'],
 						min: 1,
 						max: 1,
@@ -210,7 +210,7 @@ describe('buildDot', () => {
 					createStatement({
 						id: 'name',
 						propertyId: 'ex:name',
-						valueType: 'literal',
+						valueType: ['literal'],
 					}),
 				],
 			}),
@@ -416,7 +416,7 @@ describe('buildDiagram', () => {
 				createStatement({
 					id: 'name',
 					propertyId: 'ex:name',
-					valueType: 'literal',
+					valueType: ['literal'],
 				}),
 			],
 		}),

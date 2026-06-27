@@ -154,7 +154,7 @@ describe('buildPropertyShape', () => {
 		const shapeNode = namedNode('http://example.org/S');
 		const stmt = createStatement({
 			propertyId: 'foaf:name',
-			valueType: 'iri',
+			valueType: ['iri'],
 		});
 
 		buildPropertyShape(shapeNode, stmt, ns, base, quads);
@@ -163,13 +163,38 @@ describe('buildPropertyShape', () => {
 		expect(nkQ?.object.value).toBe(`${SH}IRI`);
 	});
 
+	it('emits sh:or of sh:nodeKind for multiple node kinds', () => {
+		const quads: N3.Quad[] = [];
+		const shapeNode = namedNode('http://example.org/S');
+		const stmt = createStatement({
+			propertyId: 'foaf:name',
+			valueType: ['iri', 'bnode'],
+		});
+
+		buildPropertyShape(shapeNode, stmt, ns, base, quads);
+
+		// No flat sh:nodeKind on the property — it's wrapped in sh:or.
+		const propNode = quads.find((q) => q.predicate.value === `${SH}path`)?.subject;
+		const flatNk = quads.find(
+			(q) => q.subject.equals(propNode!) && q.predicate.value === `${SH}nodeKind`
+		);
+		expect(flatNk).toBeUndefined();
+		// sh:or present, and both node kinds appear as nested members.
+		expect(quads.some((q) => q.predicate.value === `${SH}or`)).toBe(true);
+		const nodeKinds = quads
+			.filter((q) => q.predicate.value === `${SH}nodeKind`)
+			.map((q) => q.object.value);
+		expect(nodeKinds).toContain(`${SH}IRI`);
+		expect(nodeKinds).toContain(`${SH}BlankNodeOrIRI`);
+	});
+
 	it('omits sh:nodeKind when datatype is present', () => {
 		const quads: N3.Quad[] = [];
 		const xsd: NamespaceMap = { xsd: 'http://www.w3.org/2001/XMLSchema#' };
 		const shapeNode = namedNode('http://example.org/S');
 		const stmt = createStatement({
 			propertyId: 'foaf:name',
-			valueType: 'literal',
+			valueType: ['literal'],
 			datatype: ['xsd:string'],
 		});
 
@@ -245,6 +270,34 @@ describe('buildPropertyShape', () => {
 		buildPropertyShape(shapeNode, stmt, ns, base, quads);
 
 		expect(quads).toHaveLength(0);
+	});
+
+	it('conjoins multiple disjunction families under one sh:and (no duplicate sh:or)', () => {
+		const quads: N3.Quad[] = [];
+		const shapeNode = namedNode('http://example.org/S');
+		// Two families each need a sh:or: multi-shape AND multi-scheme.
+		const stmt = createStatement({
+			propertyId: 'foaf:name',
+			valueType: ['iri'],
+			shapeRefs: ['PersonShape', 'OrgShape'],
+			inScheme: ['http://a.example/', 'http://b.example/'],
+		});
+
+		buildPropertyShape(shapeNode, stmt, ns, base, quads);
+
+		const propNode = quads.find((q) => q.predicate.value === `${SH}path`)!.subject;
+		// Exactly one sh:and on the property; zero direct sh:or on it.
+		const andOnProp = quads.filter(
+			(q) => q.subject.equals(propNode) && q.predicate.value === `${SH}and`
+		);
+		const orOnProp = quads.filter(
+			(q) => q.subject.equals(propNode) && q.predicate.value === `${SH}or`
+		);
+		expect(andOnProp).toHaveLength(1);
+		expect(orOnProp).toHaveLength(0);
+		// Two sh:or sub-shapes hang under the sh:and.
+		const orTotal = quads.filter((q) => q.predicate.value === `${SH}or`);
+		expect(orTotal).toHaveLength(2);
 	});
 });
 
@@ -356,7 +409,7 @@ describe('buildShaclQuads', () => {
 						propertyId: 'foaf:name',
 						min: 1,
 						max: 1,
-						valueType: 'literal',
+						valueType: ['literal'],
 					}),
 				],
 			}),
@@ -391,7 +444,7 @@ describe('buildShacl', () => {
 						label: 'Name',
 						min: 1,
 						max: 1,
-						valueType: 'literal',
+						valueType: ['literal'],
 					}),
 				],
 			}),
@@ -418,7 +471,7 @@ describe('buildShacl', () => {
 				statements: [
 					createStatement({
 						propertyId: 'foaf:name',
-						valueType: 'literal',
+						valueType: ['literal'],
 					}),
 				],
 			}),
@@ -516,7 +569,7 @@ describe('buildShacl', () => {
 				statements: [
 					createStatement({
 						propertyId: 'http://example.org/creator',
-						valueType: 'iri',
+						valueType: ['iri'],
 						shapeRefs: ['PersonShape', 'OrganizationShape'],
 					}),
 				],

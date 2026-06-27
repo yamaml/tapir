@@ -14,7 +14,7 @@
  * | propertyLabel       | Statement.label                     |
  * | mandatory           | Statement.min (TRUE→1, FALSE→0, empty→unset) |
  * | repeatable          | Statement.max (TRUE→null=unbounded, FALSE→1, empty→unset) |
- * | valueNodeType       | Statement.valueType (iri/literal/bnode) |
+ * | valueNodeType       | Statement.valueType (space-separated, e.g. "IRI BNODE") |
  * | valueDataType       | Statement.datatype                  |
  * | valueShape          | Statement.shapeRefs                 |
  * | valueConstraint     | Statement.values/pattern/facets     |
@@ -36,6 +36,7 @@ import type {
 } from '$lib/types';
 import type { ParseResult, ParseMessage } from '$lib/types/export';
 import { createProject, createDescription, createStatement } from '$lib/types/profile';
+import { parseValueTypeTokens } from '$lib/utils/value-type';
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -74,25 +75,22 @@ export function parseBool(val: string | null | undefined): boolean | null {
 }
 
 /**
- * Resolves Tapir `valueType` from a DCTAP `valueNodeType` string.
+ * Resolves Tapir `valueType` list from a DCTAP `valueNodeType` cell.
  *
- * @param nodeType - The DCTAP valueNodeType value.
- * @returns The Tapir ValueType, or empty string if unrecognised.
+ * DCTAP (per the DCMI SRAP convention) allows multiple node kinds in one
+ * cell, e.g. `IRI BNODE` or `IRI literal`. Each token is mapped and kept;
+ * unrecognised tokens and duplicates are dropped while preserving order.
+ * `URI` is accepted as a synonym for `IRI`.
+ *
+ * @param nodeType - The DCTAP valueNodeType cell value.
+ * @returns The Tapir value types (empty when none recognised).
+ *
+ * @example
+ * fromValueNodeType('IRI BNODE') // => ['iri', 'bnode']
+ * fromValueNodeType('IRI literal') // => ['iri', 'literal']
  */
-export function fromValueNodeType(nodeType: string | undefined): ValueType {
-	if (!nodeType) return '';
-	const parts = String(nodeType).trim().split(/\s+/);
-	switch (parts[0].toUpperCase()) {
-		case 'IRI':
-		case 'URI':
-			return 'iri';
-		case 'LITERAL':
-			return 'literal';
-		case 'BNODE':
-			return 'bnode';
-		default:
-			return '';
-	}
+export function fromValueNodeType(nodeType: string | undefined): ValueType[] {
+	return parseValueTypeTokens(nodeType);
 }
 
 /**
@@ -353,18 +351,10 @@ export function dctapRowsToTapir(
 		const propertyLabel = String(row.propertyLabel || '').trim();
 		if (propertyLabel) stmt.label = propertyLabel;
 
-		// Value node type. DCTAP allows multiple node kinds in one cell
-		// (e.g. SRAP's "IRI BNODE"); the Tapir model holds one, so keep
-		// the first and warn about the rest.
-		const nodeTypeTokens = String(row.valueNodeType || '').trim().split(/\s+/).filter(Boolean);
-		if (nodeTypeTokens.length > 1) {
-			warnings.push({
-				line: rowIndex + 1,
-				message: `Row ${rowIndex + 1} (${propertyID}): multiple valueNodeType tokens "${nodeTypeTokens.join(' ')}" — keeping "${nodeTypeTokens[0]}"`,
-			});
-		}
-		const valueType = fromValueNodeType(row.valueNodeType);
-		if (valueType) stmt.valueType = valueType;
+		// Value node type(s). DCTAP allows multiple node kinds in one
+		// cell (e.g. SRAP's "IRI BNODE"); all are kept as alternatives.
+		const valueTypes = fromValueNodeType(row.valueNodeType);
+		if (valueTypes.length) stmt.valueType = valueTypes;
 
 		// Value data type — space-separated multi-value per the DCMI
 		// SRAP convention (e.g. "xsd:gYear xsd:gYearMonth xsd:date").

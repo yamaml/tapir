@@ -28,7 +28,7 @@ function makeProject(): TapirProject {
 		id: 'stmt-1',
 		label: 'Title',
 		propertyId: 'dcterms:title',
-		valueType: 'literal',
+		valueType: ['literal'],
 		datatype: ['xsd:string'],
 	});
 	const desc = createDescription({ id: 'desc-1', name: 'MAIN', statements: [stmt] });

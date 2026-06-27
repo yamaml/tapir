@@ -16,27 +16,66 @@
 
 import type { Flavor, Statement, ValueType } from '$lib/types';
 import { parseQuotedValues } from '$lib/converters/simpledsp-parser';
+import { VALUE_TYPE_ORDER } from './value-type';
+
+/** Stored node kinds in canonical order (no derived `structured`). */
+function nodeKinds(stmt: Statement): ValueType[] {
+	return VALUE_TYPE_ORDER.filter((t) => stmt.valueType.includes(t));
+}
 
 // ── Value Type Display + Parsing ────────────────────────────────
 
-/** Display-level value type: the internal union plus derived 'structured'. */
-export type DisplayValueType = ValueType | 'structured';
+/**
+ * Display-level value type: one stored node kind, the empty-state `''`,
+ * or the derived pseudo-type `structured`.
+ */
+export type DisplayValueType = ValueType | 'structured' | '';
 
 /**
- * Resolves the display value type for a statement.
+ * Resolves the display value types for a statement (multi-chip view).
  *
- * `structured` is derived from `shapeRefs`/`classConstraint` presence
- * (and tolerated for legacy records that stored the out-of-union
- * string); everything else is the stored `valueType`.
+ * For SimpleDSP, `structured` is a display value type derived from
+ * `shapeRefs`/`classConstraint` presence, mutually exclusive with the
+ * stored node kinds — so a row with refs displays as `['structured']`.
+ *
+ * DCTAP has no `structured` concept: `valueNodeType` and `valueShape`
+ * are independent columns, so a DCTAP statement can carry both a node
+ * kind and a shape ref. There the stored node kinds are returned
+ * verbatim, never collapsed to `structured`.
+ *
+ * An empty result means "no value type".
  *
  * @param stmt - The statement to inspect.
- * @returns The display value type.
+ * @param flavor - The active flavor (defaults to SimpleDSP semantics).
+ * @returns The display value types (empty when none).
  */
-export function displayValueType(stmt: Statement): DisplayValueType {
-	if (stmt.shapeRefs && stmt.shapeRefs.length > 0) return 'structured';
-	if (stmt.classConstraint && stmt.classConstraint.length > 0) return 'structured';
-	if ((stmt.valueType as string) === 'structured') return 'structured'; // legacy tolerance
-	return stmt.valueType;
+export function displayValueTypes(
+	stmt: Statement,
+	flavor: Flavor = 'simpledsp'
+): DisplayValueType[] {
+	if (flavor === 'dctap') return nodeKinds(stmt);
+	if (stmt.shapeRefs && stmt.shapeRefs.length > 0) return ['structured'];
+	if (stmt.classConstraint && stmt.classConstraint.length > 0) return ['structured'];
+	return nodeKinds(stmt);
+}
+
+/**
+ * Resolves the single dominant display value type for a statement, for
+ * the places that can only show one token (cell colour, the SimpleDSP
+ * Constraint-cell parsing precedence).
+ *
+ * Precedence: `structured` (from refs/classes) → `iri` → `literal` →
+ * `bnode` → `''` (none).
+ *
+ * @param stmt - The statement to inspect.
+ * @returns The dominant display value type, or `''` when none.
+ */
+export function displayValueType(
+	stmt: Statement,
+	flavor: Flavor = 'simpledsp'
+): DisplayValueType {
+	const types = displayValueTypes(stmt, flavor);
+	return types.length > 0 ? types[0] : '';
 }
 
 /**
@@ -87,22 +126,78 @@ export function parseValueTypeCell(input: string): DisplayValueType | null {
 }
 
 /**
- * Maps a value-type selection to the Statement updates to commit.
+ * Parses a whitespace-separated value-type cell (e.g. the Raw Table's
+ * `"IRI BNODE"`) into a list of display value types.
  *
- * Selecting `structured` clears the literal-side fields and keeps the
- * structural ones (`shapeRefs`/`classConstraint`) so the editor can
- * reveal their pickers — it never writes `'structured'` into
- * `valueType`. Any other selection stores the value type and drops
- * structural refs.
+ * Each token is mapped through {@link parseValueTypeCell}; unrecognised
+ * tokens make the whole parse fail (returns `null`) so a typo never
+ * silently wipes part of the value, matching the single-token contract.
+ * `structured` and `''` tokens are dropped from a multi-token list
+ * (they are not real node kinds); a lone `''`/`structured` token is
+ * preserved so clearing the cell still works.
  *
- * @param selection - The chosen display value type.
+ * @param input - The raw cell text.
+ * @returns The display value types, or `null` when any token is unrecognised.
+ *
+ * @example
+ * parseValueTypeCellList('IRI BNODE') // => ['iri', 'bnode']
+ * parseValueTypeCellList('')          // => ['']
+ * parseValueTypeCellList('IRI typo')  // => null
+ */
+export function parseValueTypeCellList(input: string): DisplayValueType[] | null {
+	const tokens = input.trim().split(/\s+/).filter(Boolean);
+	if (tokens.length === 0) return [''];
+	const parsed = tokens.map(parseValueTypeCell);
+	if (parsed.some((p) => p === null)) return null;
+	const types = parsed as DisplayValueType[];
+	// A lone 'structured' or '' (clear) token is preserved as-is; in a
+	// multi-token cell those pseudo-tokens are dropped, leaving only the
+	// real node kinds (de-duplicated, first-seen order).
+	if (types.length === 1) return types;
+	const out: DisplayValueType[] = [];
+	for (const t of types) {
+		if (t && t !== 'structured' && !out.includes(t)) out.push(t);
+	}
+	return out;
+}
+
+/**
+ * Maps a value-type selection (one display type or a list of them) to
+ * the Statement updates to commit.
+ *
+ * Behaviour depends on flavour:
+ *   - SimpleDSP: `structured` and the node kinds are mutually exclusive
+ *     (`structured` is derived from `shapeRefs`/`classConstraint`).
+ *     Selecting `structured` clears the node kinds and datatype; any
+ *     node-kind selection clears the structural refs.
+ *   - DCTAP: `valueNodeType` and `valueShape` are independent columns, so
+ *     changing the node kind leaves `shapeRefs`/`classConstraint`
+ *     untouched. There is no `structured` display type for DCTAP.
+ *
+ * `structured` is never written into `valueType`. Empty selections clear
+ * the value type.
+ *
+ * @param selection - The chosen display value type(s).
+ * @param flavor - The active flavour (defaults to SimpleDSP semantics).
  * @returns Partial statement updates for `updateStatement`.
  */
-export function valueTypeSelectionUpdates(selection: DisplayValueType): Partial<Statement> {
-	if (selection === 'structured') {
-		return { valueType: '', datatype: [] };
+export function valueTypeSelectionUpdates(
+	selection: DisplayValueType | DisplayValueType[],
+	flavor: Flavor = 'simpledsp'
+): Partial<Statement> {
+	const list = Array.isArray(selection) ? selection : [selection];
+	// Keep only real node kinds, in canonical order.
+	const valueType = VALUE_TYPE_ORDER.filter((t) => list.includes(t));
+
+	if (flavor === 'dctap') {
+		// Node kind and valueShape coexist — never touch the refs here.
+		return { valueType };
 	}
-	return { valueType: selection, shapeRefs: [], classConstraint: [] };
+
+	if (list.includes('structured')) {
+		return { valueType: [], datatype: [] };
+	}
+	return { valueType, shapeRefs: [], classConstraint: [] };
 }
 
 // ── SimpleDSP Constraint Cell ───────────────────────────────────
@@ -150,10 +245,10 @@ export function parseSimpleDspConstraintCell(
 
 	if (display === 'structured') {
 		// Class constraint(s). The SimpleDSP parser stores these as
-		// valueType 'iri' + classConstraint; mirror it here.
+		// valueType ['iri'] + classConstraint; mirror it here.
 		return {
 			...CLEARED_CONSTRAINT_FIELDS,
-			valueType: 'iri',
+			valueType: ['iri'],
 			classConstraint: t.split(/\s+/).filter(Boolean),
 		};
 	}
@@ -322,19 +417,23 @@ export function commitCellEdit(
 
 	if (field === 'valueType') {
 		// Parse display strings (EN + localized JP labels) back to the
-		// internal value type via the shared mapping.
-		const parsed = parseValueTypeCell(value);
+		// internal value type via the shared mapping. A multi-token cell
+		// (e.g. the Raw Table's "IRI BNODE") parses to a list.
+		const parsed = parseValueTypeCellList(value);
 		if (parsed === null) {
 			// Unrecognised input never wipes the stored value.
 			return noop;
 		}
+		// 'structured' can only arrive as a lone token (the list parser
+		// drops it from a multi-token cell).
+		const isStructured = parsed.length === 1 && parsed[0] === 'structured';
 		return {
-			updates: valueTypeSelectionUpdates(parsed),
+			updates: valueTypeSelectionUpdates(parsed, flavor),
 			// 'structured' is derived from refs; with none set yet the
 			// selection would otherwise display as empty, so the editor
 			// opens the constraint popover for the user to pick a target.
 			openConstraintPopover:
-				parsed === 'structured' &&
+				isStructured &&
 				flavor === 'simpledsp' &&
 				!(stmt.shapeRefs?.length || stmt.classConstraint?.length),
 		};

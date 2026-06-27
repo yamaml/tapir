@@ -102,7 +102,17 @@ function resolveFieldType(
 		if (mapped) return { ...mapped };
 	}
 
-	if (stmt.valueType === 'iri') {
+	// Frictionless cannot express alternative node kinds; a multi-type
+	// statement is reported, then collapsed (uri format when iri is one
+	// of the kinds, plain string otherwise).
+	if (stmt.valueType.length > 1) {
+		warnings?.push({
+			message: `Field "${stmt.propertyId || stmt.id}": Frictionless allows one node type per field — collapsed "${stmt.valueType.join(' ')}" to ${
+				stmt.valueType.includes('iri') ? 'string/uri' : 'string'
+			}`,
+		});
+	}
+	if (stmt.valueType.includes('iri')) {
 		return { type: 'string', format: 'uri' };
 	}
 

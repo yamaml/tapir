@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Description, Flavor, Statement } from '$lib/types';
 	import { getEditorStrings } from '$lib/types';
-	import { displayValueType } from '$lib/utils/editor-cells';
+	import { displayValueType, parseSimpleDspConstraintCell } from '$lib/utils/editor-cells';
 	import { updateStatement, currentProject, simpleDspLang } from '$lib/stores';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 
@@ -113,7 +113,7 @@
 
 	function commitFreeText() {
 		const val = freeText.trim();
-		if (stmt.valueType === 'literal') {
+		if (stmt.valueType.includes('literal')) {
 			const quoted = val.match(/"([^"]*)"/g);
 			if (quoted) {
 				updateStatement(description.id, stmt.id, {
@@ -146,7 +146,12 @@
 				constraint: '',
 			});
 		} else {
-			updateStatement(description.id, stmt.id, { constraint: val });
+			// IRI / vocab-stem / URI-list free text. Route it the same way
+			// the table editors do (stems ending ':' or '/'|'#' → inScheme,
+			// the rest → enumerated IRI values) instead of dumping it into
+			// `constraint`, which resolveSimpleDspConstraint never reads —
+			// the input would otherwise be silently dropped on export.
+			updateStatement(description.id, stmt.id, parseSimpleDspConstraintCell(val, stmt));
 		}
 		onclose();
 	}
@@ -387,10 +392,10 @@
 				</div>
 			</div>
 		{/if}
-	{:else if !stmt.valueType && (!stmt.shapeRefs || stmt.shapeRefs.length === 0) && stmt.classConstraint?.length === 0 && descriptionNames.length === 0}
+	{:else if stmt.valueType.length === 0 && (!stmt.shapeRefs || stmt.shapeRefs.length === 0) && stmt.classConstraint?.length === 0 && descriptionNames.length === 0}
 		<p class="text-muted-foreground italic py-2">{ui.setValueTypeFirst}</p>
 
-	{:else if stmt.valueType === 'literal'}
+	{:else if stmt.valueType.includes('literal')}
 		<!-- Literal constraints: datatype picker + picklist input -->
 		<div class="space-y-1.5">
 			<p class="font-medium text-muted-foreground uppercase tracking-wider text-[10px]">{ui.datatypeHeading}</p>
@@ -433,7 +438,7 @@
 			</div>
 		</div>
 
-	{:else if stmt.valueType === 'iri' || displayValueType(stmt) === 'structured' || !stmt.valueType}
+	{:else if stmt.valueType.includes('iri') || displayValueType(stmt) === 'structured' || stmt.valueType.length === 0}
 		<!-- IRI / structured / untyped: reference toggles, vocab stems,
 			 URI list. Untyped rows are included so picking "structured"
 			 in the smart table (which stores no valueType — the type is
@@ -461,7 +466,7 @@
 				</div>
 			{/if}
 
-			{#if stmt.valueType === 'iri'}
+			{#if stmt.valueType.includes('iri')}
 				<div class="border-t border-border pt-1.5">
 					<p class="font-medium text-muted-foreground uppercase tracking-wider text-[10px] mb-1">{ui.vocabStemHeading}</p>
 					{#if (stmt.inScheme?.length ?? 0) > 0}

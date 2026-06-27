@@ -18,6 +18,7 @@ import { writable, derived, get } from 'svelte/store';
 import type { TapirProject, Description, Statement } from '$lib/types';
 import { createDescription, createStatement } from '$lib/types';
 import { pushUndo } from './history-store';
+import { selectedDescriptionId } from './ui-store';
 
 // ── Store ───────────────────────────────────────────────────────
 
@@ -62,6 +63,13 @@ export function removeDescription(descriptionId: string): void {
 					return { ...s, shapeRefs: s.shapeRefs.filter((r) => r !== removedName) };
 				}),
 			}));
+		}
+
+		// If the deleted description was the selected one, re-point the
+		// selection to the first remaining description (or clear it) so
+		// the editor pane never goes blank on a stale selection.
+		if (get(selectedDescriptionId) === descriptionId) {
+			selectedDescriptionId.set(descriptions[0]?.id ?? null);
 		}
 
 		return {

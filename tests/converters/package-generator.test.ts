@@ -25,7 +25,7 @@ function project() {
 			createDescription({
 				name: 'Book',
 				statements: [
-					createStatement({ propertyId: 'dcterms:title', label: 'Title', valueType: 'literal' }),
+					createStatement({ propertyId: 'dcterms:title', label: 'Title', valueType: ['literal'] }),
 				],
 			}),
 		],

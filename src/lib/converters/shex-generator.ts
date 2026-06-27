@@ -96,9 +96,18 @@ function formatIriToken(term: string): string {
 	return isFullIri(term) ? `<${term}>` : term;
 }
 
-/** Escapes a string-literal member of a value set (`\` and `"`). */
+/**
+ * Escapes a string-literal member of a value set. Beyond `\` and `"`,
+ * newlines/carriage returns/tabs must be escaped — a raw newline inside
+ * a `"..."` ShExC literal does not lex.
+ */
 function escapeLiteral(value: string): string {
-	return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+	return value
+		.replace(/\\/g, '\\\\')
+		.replace(/"/g, '\\"')
+		.replace(/\n/g, '\\n')
+		.replace(/\r/g, '\\r')
+		.replace(/\t/g, '\\t');
 }
 
 // ── Node Constraint Formatting ──────────────────────────────────
@@ -130,15 +139,25 @@ const FACET_NAMES: FacetName[] = [
  * (`/pattern/`) with literal `/` escaped as `\/` — `//pattern//`
  * cannot lex.
  *
+ * `inScheme` and `classConstraint` have no clean inline ShExC form:
+ * an inScheme-restricted value still requires an `IRI` node kind (the
+ * stem itself can't be expressed in core ShEx), and a class constraint
+ * would need a referenced shape. Rather than silently dropping them,
+ * the IRI requirement is preserved and a warning records the lossy
+ * approximation.
+ *
  * @param stmt - The statement to format.
+ * @param warnings - Optional accumulator for lossy-mapping warnings.
  * @returns ShExC node constraint string.
  */
-export function formatNodeConstraint(stmt: Statement): string {
+export function formatNodeConstraint(stmt: Statement, warnings?: GeneratorWarning[]): string {
 	const parts: string[] = [];
 
 	// Shape reference(s) take precedence. Multi-shape becomes a disjunction.
 	const refs = stmt.shapeRefs ?? [];
 	const dts = stmt.datatype ?? [];
+	const classes = stmt.classConstraint ?? [];
+	const schemes = stmt.inScheme ?? [];
 	if (refs.length === 1) {
 		parts.push(`@<${refs[0]}>`);
 	} else if (refs.length > 1) {
@@ -149,19 +168,40 @@ export function formatNodeConstraint(stmt: Statement): string {
 	} else if (dts.length > 1) {
 		// Multi-datatype → ShEx node-constraint disjunction.
 		parts.push(`(${dts.map(formatIriToken).join(' OR ')})`);
+	} else if (classes.length > 0) {
+		// Class constraint: ShExC has no inline class membership in a
+		// node constraint. Require an IRI value and warn that the class
+		// restriction is not expressed.
+		parts.push('IRI');
+		warnings?.push({
+			message: `Statement "${stmt.label || stmt.propertyId}": class constraint (${classes.join(', ')}) cannot be expressed inline in ShEx — emitted as IRI only`,
+		});
+	} else if (schemes.length > 0) {
+		// Vocabulary scheme: the value must be an IRI; the stem itself
+		// can't be expressed in core ShEx, so warn about the loss.
+		parts.push('IRI');
+		warnings?.push({
+			message: `Statement "${stmt.label || stmt.propertyId}": inScheme stem (${schemes.join(', ')}) cannot be expressed in ShEx — emitted as IRI only`,
+		});
 	} else if (Array.isArray(stmt.values) && stmt.values.length > 0) {
 		// Value set. IRI-typed members are IRI terms (an IRI node can
 		// never equal a string literal); literal members are escaped
 		// string literals.
 		const vals =
-			stmt.valueType === 'iri'
+			stmt.valueType.includes('iri')
 				? stmt.values.map((v) => formatIriToken(String(v))).join(' ')
 				: stmt.values.map((v) => `"${escapeLiteral(String(v))}"`).join(' ');
 		parts.push(`[${vals}]`);
 	} else {
-		// Bare node kind from valueType
-		const type = (stmt.valueType || 'literal').toUpperCase();
-		parts.push(type);
+		// Bare node kind(s) from valueType. A single kind emits a bare
+		// token (IRI/LITERAL/BNODE); multiple kinds become a ShEx
+		// node-kind disjunction, e.g. `(IRI OR LITERAL)`. Empty defaults
+		// to LITERAL, matching the prior single-value behaviour.
+		const kinds =
+			stmt.valueType.length > 0
+				? stmt.valueType.map((t) => t.toUpperCase())
+				: ['LITERAL'];
+		parts.push(kinds.length === 1 ? kinds[0] : `(${kinds.join(' OR ')})`);
 	}
 
 	// String facet: pattern — `/…/` REGEXP token, `/` escaped as `\/`.
@@ -202,7 +242,7 @@ function collectCuriePrefixes(project: TapirProject): Set<string> {
 			add(stmt.propertyId);
 			for (const dt of stmt.datatype ?? []) add(dt);
 			if (
-				stmt.valueType === 'iri' &&
+				stmt.valueType.includes('iri') &&
 				(stmt.shapeRefs ?? []).length === 0 &&
 				(stmt.datatype ?? []).length === 0
 			) {
@@ -291,7 +331,7 @@ export function buildShExC(project: TapirProject, warnings?: GeneratorWarning[])
 		for (const stmt of statements) {
 			if (!stmt.propertyId) continue;
 
-			const nodeConstraint = formatNodeConstraint(stmt);
+			const nodeConstraint = formatNodeConstraint(stmt, warnings);
 			const cardinality = formatCardinality(stmt.min, stmt.max);
 
 			tripleConstraints.push(

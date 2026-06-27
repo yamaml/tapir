@@ -14,7 +14,7 @@
  * | Statement.label          | propertyLabel         |
  * | Statement.min >= 1       | mandatory = TRUE      |
  * | Statement.max null/> 1   | repeatable = TRUE     |
- * | Statement.valueType      | valueNodeType         |
+ * | Statement.valueType      | valueNodeType (space-separated) |
  * | Statement.datatype       | valueDataType         |
  * | Statement.shapeRefs      | valueShape (space-separated) |
  * | Statement.values         | valueConstraint (picklist) |
@@ -30,6 +30,7 @@
 
 import type { TapirProject, Description, Statement } from '$lib/types';
 import type { GeneratorWarning } from '$lib/types/export';
+import { formatValueNodeType, normaliseValueTypes } from '$lib/utils/value-type';
 
 // ── Constants ───────────────────────────────────────────────────
 
@@ -88,23 +89,23 @@ export function toRepeatable(max: number | null | undefined): string {
 }
 
 /**
- * Resolves the DCTAP `valueNodeType` from Tapir valueType.
+ * Resolves the DCTAP `valueNodeType` cell from a Tapir valueType list.
  *
- * @param type - The Tapir ValueType value.
- * @returns The DCTAP valueNodeType string.
+ * Multiple node kinds are space-joined in canonical order per the DCMI
+ * SRAP convention (e.g. `['bnode','iri']` → `IRI bnode`). `IRI` is
+ * emitted uppercase; `literal`/`bnode` stay lowercase, matching the
+ * DCTAP examples. Unknown tokens are dropped. Empty → empty cell.
+ *
+ * @param types - The Tapir value types (a single string is tolerated for
+ *   back-compat with callers that pass a scalar).
+ * @returns The DCTAP valueNodeType cell string.
+ *
+ * @example
+ * toValueNodeType(['iri', 'bnode']) // => 'IRI bnode'
+ * toValueNodeType(['literal']) // => 'literal'
  */
-export function toValueNodeType(type: string): string {
-	if (!type) return '';
-	switch (type.toLowerCase()) {
-		case 'iri':
-			return 'IRI';
-		case 'literal':
-			return 'literal';
-		case 'bnode':
-			return 'bnode';
-		default:
-			return '';
-	}
+export function toValueNodeType(types: readonly string[] | string | undefined): string {
+	return formatValueNodeType(normaliseValueTypes(types ?? null));
 }
 
 /**

@@ -22,6 +22,7 @@
 import type { TapirProject, Description, Statement, NamespaceMap, FlavorLabels } from '$lib/types';
 import { getFlavorLabels } from '$lib/types';
 import { STANDARD_PREFIXES } from './simpledsp-generator';
+import { toMandatory, toRepeatable } from './dctap-generator';
 import { expandPrefixed } from '$lib/utils/iri-utils';
 
 // ── Inline report stylesheet ────────────────────────────────────
@@ -126,9 +127,8 @@ function today(): string {
  *
  * Maps Tapir's flavor-neutral fields to a human-readable type label:
  *   - `datatype` present -> the datatype CURIE
- *   - `valueType === 'iri'` -> flavor label (e.g. "IRI")
- *   - `valueType === 'literal'` -> flavor label (e.g. "literal")
- *   - `valueType === 'bnode'` -> flavor label (e.g. "bnode")
+ *   - each `valueType` member -> its flavor label, joined with " / "
+ *     (e.g. "IRI / literal" for a multi-type statement)
  *   - Otherwise -> empty
  *
  * @param stmt - The statement.
@@ -137,11 +137,12 @@ function today(): string {
  */
 function resolveType(stmt: Statement, labels: FlavorLabels): string {
 	if (stmt.datatype && stmt.datatype.length > 0) return stmt.datatype.join(' ');
-	if (stmt.valueType === 'iri') return labels.valueTypes.iri;
-	if (stmt.valueType === 'literal') return labels.valueTypes.literal;
-	if (stmt.valueType === 'bnode') return labels.valueTypes.bnode;
-	if (stmt.valueType) return stmt.valueType;
-	return '';
+	const typeLabels: Record<string, string> = {
+		iri: labels.valueTypes.iri,
+		literal: labels.valueTypes.literal,
+		bnode: labels.valueTypes.bnode,
+	};
+	return stmt.valueType.map((t) => typeLabels[t] ?? t).join(' / ');
 }
 
 /**
@@ -151,8 +152,8 @@ function resolveType(stmt: Statement, labels: FlavorLabels): string {
  *   1. `shapeRefs` -> comma-separated shape names
  *   2. `classConstraint` -> comma-separated class names
  *   3. `inScheme` -> comma-separated scheme URIs
- *   4. `values` with `valueType === 'iri'` -> unquoted URIs
- *   5. `values` with `valueType === 'literal'` -> quoted strings
+ *   4. `values` with `valueType` including iri -> unquoted URIs
+ *   5. `values` otherwise (literal) -> quoted strings
  *   6. `pattern` -> regex pattern
  *
  * @param stmt - The statement.
@@ -163,7 +164,7 @@ function resolveConstraint(stmt: Statement): string {
 	if (stmt.classConstraint.length > 0) return stmt.classConstraint.join(', ');
 	if (stmt.inScheme.length > 0) return stmt.inScheme.join(', ');
 	if (Array.isArray(stmt.values) && stmt.values.length > 0) {
-		if (stmt.valueType === 'iri') return stmt.values.join(', ');
+		if (stmt.valueType.includes('iri')) return stmt.values.join(', ');
 		return stmt.values.map((v) => `"${v}"`).join(', ');
 	}
 	if (stmt.pattern) return `/${stmt.pattern}/`;
@@ -322,13 +323,14 @@ export function generateHtmlReport(project: TapirProject, svgDiagram?: string): 
 				const stmtName = stmt.label || stmt.id;
 				const property = stmt.propertyId || '';
 				const propertyIri = expandPrefixed(property, allNs, base);
-				// DCTAP: show mandatory/repeatable as TRUE/FALSE
-				// SimpleDSP: show min/max as numbers
+				// DCTAP: show mandatory/repeatable via the canonical helpers
+				// so the report matches the actual DCTAP export (tri-state).
+				// SimpleDSP: show min/max as numbers.
 				let minDisplay: string;
 				let maxDisplay: string;
 				if (isDctap) {
-					minDisplay = (stmt.min != null && stmt.min >= 1) ? 'TRUE' : 'FALSE';
-					maxDisplay = (stmt.max == null || stmt.max > 1) ? 'TRUE' : 'FALSE';
+					minDisplay = toMandatory(stmt.min);
+					maxDisplay = toRepeatable(stmt.max);
 				} else {
 					minDisplay = stmt.min != null ? String(stmt.min) : '0';
 					maxDisplay = stmt.max != null ? String(stmt.max) : '*';

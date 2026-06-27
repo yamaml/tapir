@@ -150,7 +150,7 @@ describe('buildDataPackageObject', () => {
 				statements: [
 					createStatement({
 						propertyId: 'foaf:homepage',
-						valueType: 'iri',
+						valueType: ['iri'],
 					}),
 				],
 			}),

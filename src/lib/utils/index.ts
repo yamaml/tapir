@@ -4,6 +4,7 @@
  */
 
 export * from './iri-utils';
+export * from './value-type';
 export * from './validation';
 export * from './file-io';
 export * from './search-match';

@@ -187,6 +187,33 @@ describe('legacy datatype migration', () => {
 		const loaded = await loadProject(project.id);
 		expect(loaded!.descriptions[0].statements[0].datatype).toEqual(['xsd:string']);
 	});
+
+	it('promotes scalar valueType to a list', () => {
+		const project = createProject({ name: 'LegacyVT', flavor: 'dctap' });
+		const legacyStmt = (valueType: unknown) => ({
+			...createStatement({ propertyId: 'ex:p' }),
+			valueType: valueType as never,
+		});
+		project.descriptions = [
+			{
+				id: 'd1', name: 'S', label: '', targetClass: '', idPrefix: '',
+				note: '', closed: false,
+				statements: [
+					legacyStmt('iri'),
+					legacyStmt('IRI BNODE'), // legacy could carry a multi-token string
+					legacyStmt(''), // unset
+					legacyStmt('structured'), // derived pseudo-type → dropped
+					legacyStmt(undefined),
+				],
+			},
+		];
+		const stmts = migrateLegacyDatatype(project).descriptions[0].statements;
+		expect(stmts[0].valueType).toEqual(['iri']);
+		expect(stmts[1].valueType).toEqual(['iri', 'bnode']);
+		expect(stmts[2].valueType).toEqual([]);
+		expect(stmts[3].valueType).toEqual([]);
+		expect(stmts[4].valueType).toEqual([]);
+	});
 });
 
 describe('snapshot operations', () => {

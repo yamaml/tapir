@@ -34,12 +34,24 @@ import { generateHtmlReport } from './report-generator';
 import { buildYamaYaml } from './yaml-generator';
 import { buildYamaJson } from './json-generator';
 import { buildSimpleDsp } from './simpledsp-generator';
-import { buildDctapRows, DCTAP_COLUMNS } from './dctap-generator';
+import { buildDctapRows, DCTAP_COLUMNS, toMandatory, toRepeatable } from './dctap-generator';
 import { buildShacl } from './shacl-generator';
 import { buildShExC } from './shex-generator';
 import { buildOwlDsp } from './owldsp-generator';
 
 // ── Markdown Report ─────────────────────────────────────────────
+
+/**
+ * Escapes a value for a GitHub-flavoured Markdown table cell: pipes
+ * would split the cell, and raw newlines would break the row, so they
+ * become `\|` and `<br>` respectively.
+ *
+ * @param value - The raw cell text.
+ * @returns The escaped cell text.
+ */
+function escMd(value: string): string {
+	return String(value ?? '').replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>');
+}
 
 /**
  * Resolves a human-readable display type for a statement (Markdown output).
@@ -49,11 +61,9 @@ import { buildOwlDsp } from './owldsp-generator';
  */
 function resolveType(stmt: Statement): string {
 	if (stmt.datatype && stmt.datatype.length > 0) return stmt.datatype.join(' ');
-	if (stmt.valueType === 'iri') return 'IRI';
-	if (stmt.valueType === 'literal') return 'literal';
-	if (stmt.valueType === 'bnode') return 'bnode';
-	if (stmt.valueType) return stmt.valueType;
-	return '';
+	// Each node kind to its label (iri → "IRI", the rest unchanged),
+	// joined for multi-type statements (e.g. "IRI / literal").
+	return stmt.valueType.map((t) => (t === 'iri' ? 'IRI' : t)).join(' / ');
 }
 
 /**
@@ -67,7 +77,7 @@ function resolveConstraint(stmt: Statement): string {
 	if (stmt.classConstraint.length > 0) return stmt.classConstraint.join(', ');
 	if (stmt.inScheme.length > 0) return stmt.inScheme.join(', ');
 	if (Array.isArray(stmt.values) && stmt.values.length > 0) {
-		if (stmt.valueType === 'iri') return stmt.values.join(', ');
+		if (stmt.valueType.includes('iri')) return stmt.values.join(', ');
 		return stmt.values.map((v) => `"${v}"`).join(', ');
 	}
 	if (stmt.pattern) return `/${stmt.pattern}/`;
@@ -120,7 +130,7 @@ function generateMarkdownReport(project: TapirProject): string {
 		lines.push('| Prefix | Namespace URI |');
 		lines.push('|--------|---------------|');
 		for (const [prefix, uri] of Object.entries(namespaces)) {
-			lines.push(`| \`${prefix}\` | \`${uri}\` |`);
+			lines.push(`| \`${escMd(prefix)}\` | \`${escMd(uri)}\` |`);
 		}
 		lines.push('');
 	}
@@ -147,22 +157,25 @@ function generateMarkdownReport(project: TapirProject): string {
 			lines.push('|------|----------|-----|-----|-----------|------------|------|');
 
 			for (const stmt of desc.statements) {
-				const name = stmt.label || stmt.id;
-				const prop = stmt.propertyId ? `\`${stmt.propertyId}\`` : '';
+				const name = escMd(stmt.label || stmt.id);
+				const prop = stmt.propertyId ? `\`${escMd(stmt.propertyId)}\`` : '';
 
 				let minDisplay: string;
 				let maxDisplay: string;
 				if (isDctap) {
-					minDisplay = stmt.min != null && stmt.min >= 1 ? 'TRUE' : 'FALSE';
-					maxDisplay = stmt.max == null || stmt.max > 1 ? 'TRUE' : 'FALSE';
+					// Use the canonical DCTAP helpers so the report agrees
+					// with the actual DCTAP export (tri-state: blank =
+					// unspecified, TRUE = unbounded/mandatory, FALSE = not).
+					minDisplay = toMandatory(stmt.min);
+					maxDisplay = toRepeatable(stmt.max);
 				} else {
 					minDisplay = stmt.min != null ? String(stmt.min) : '0';
 					maxDisplay = stmt.max != null ? String(stmt.max) : '*';
 				}
 
-				const type = resolveType(stmt);
-				const constraint = resolveConstraint(stmt);
-				const note = stmt.note || '';
+				const type = escMd(resolveType(stmt));
+				const constraint = escMd(resolveConstraint(stmt));
+				const note = escMd(stmt.note || '');
 
 				lines.push(`| ${name} | ${prop} | ${minDisplay} | ${maxDisplay} | ${type} | ${constraint} | ${note} |`);
 			}

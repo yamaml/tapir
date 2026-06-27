@@ -84,14 +84,14 @@ describe('unrecognised value types', () => {
 		const text = ['[MAIN]', 'X\tex:p\t0\t-\treference\t\t'].join('\n');
 		const result = parseSimpleDsp(text);
 		expect(result.errors).toHaveLength(0);
-		expect(result.data.descriptions[0].statements[0].valueType).toBe('iri');
+		expect(result.data.descriptions[0].statements[0].valueType).toEqual(['iri']);
 	});
 
 	it('maps 制約なし to the unconstrained value type', () => {
 		const text = ['[MAIN]', 'X\tex:p\t0\t-\t制約なし\t\t'].join('\n');
 		const result = parseSimpleDsp(text);
 		expect(result.errors).toHaveLength(0);
-		expect(result.data.descriptions[0].statements[0].valueType).toBe('');
+		expect(result.data.descriptions[0].statements[0].valueType).toEqual([]);
 	});
 });
 
@@ -107,7 +107,7 @@ describe('picklist quoting', () => {
 					createStatement({
 						label: 'Status',
 						propertyId: 'ex:status',
-						valueType: 'literal',
+						valueType: ['literal'],
 						values: ['red'],
 					}),
 				],
@@ -132,7 +132,7 @@ describe('picklist quoting', () => {
 					createStatement({
 						label: 'Quote',
 						propertyId: 'ex:q',
-						valueType: 'literal',
+						valueType: ['literal'],
 						values: ['say "hi"', 'plain'],
 					}),
 				],
@@ -259,7 +259,7 @@ describe('Japanese export labels', () => {
 					createStatement({
 						label: '主題',
 						propertyId: 'dcterms:subject',
-						valueType: 'iri',
+						valueType: ['iri'],
 						inScheme: ['skos:'],
 					}),
 				],
@@ -279,8 +279,8 @@ describe('Japanese export labels', () => {
 				name: 'S',
 				targetClass: 'foaf:Person',
 				statements: [
-					createStatement({ label: '名前', propertyId: 'foaf:name', valueType: 'literal' }),
-					createStatement({ label: '主題', propertyId: 'dcterms:subject', valueType: 'iri' }),
+					createStatement({ label: '名前', propertyId: 'foaf:name', valueType: ['literal'] }),
+					createStatement({ label: '主題', propertyId: 'dcterms:subject', valueType: ['iri'] }),
 					createStatement({
 						label: '著者',
 						propertyId: 'dcterms:creator',
@@ -293,8 +293,8 @@ describe('Japanese export labels', () => {
 		const parsed = parseSimpleDsp(buildSimpleDsp(project, { lang: 'jp' }));
 		expect(parsed.errors).toHaveLength(0);
 		const stmts = parsed.data.descriptions[0].statements;
-		expect(stmts[0].valueType).toBe('literal');
-		expect(stmts[1].valueType).toBe('iri');
+		expect(stmts[0].valueType).toEqual(['literal']);
+		expect(stmts[1].valueType).toEqual(['iri']);
 		expect(stmts[2].shapeRefs).toEqual(['MAIN']);
 	});
 });

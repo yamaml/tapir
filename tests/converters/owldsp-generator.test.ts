@@ -26,7 +26,7 @@ describe('buildOwlDsp', () => {
 						propertyId: 'foaf:name',
 						min: 1,
 						max: 1,
-						valueType: 'literal',
+						valueType: ['literal'],
 						datatype: ['xsd:string'],
 					}),
 				],
@@ -46,7 +46,7 @@ describe('buildOwlDsp', () => {
 				statements: [
 					createStatement({
 						propertyId: 'dcterms:creator',
-						valueType: 'iri',
+						valueType: ['iri'],
 						shapeRefs: ['Person'],
 					}),
 				],
@@ -66,7 +66,7 @@ describe('buildOwlDsp', () => {
 				statements: [
 					createStatement({
 						propertyId: 'dcterms:creator',
-						valueType: 'iri',
+						valueType: ['iri'],
 						shapeRefs: ['Person', 'Organization'],
 					}),
 				],
@@ -78,5 +78,27 @@ describe('buildOwlDsp', () => {
 		expect(turtle).toContain('owl:unionOf');
 		expect(turtle).toContain('Person');
 		expect(turtle).toContain('Organization');
+	});
+
+	it('skips an undeclared prefix-only inScheme stem and warns', async () => {
+		const project = makeProject({ base: 'http://example.org/', namespaces: {} });
+		project.descriptions = [
+			createDescription({
+				name: 'Work',
+				statements: [
+					createStatement({
+						propertyId: 'dcterms:subject',
+						valueType: ['iri'],
+						// 'ndlsh:' is not a declared namespace → not a real IRI.
+						inScheme: ['ndlsh:'],
+					}),
+				],
+			}),
+		];
+		const warnings: { message: string }[] = [];
+		const turtle = await buildOwlDsp(project, 'turtle', warnings);
+		// The malformed stem is not emitted as a node.
+		expect(turtle).not.toContain('ndlsh:');
+		expect(warnings.some((w) => w.message.includes('inScheme'))).toBe(true);
 	});
 });

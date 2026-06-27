@@ -22,7 +22,7 @@
  *         label: <string>
  *         min: <number>
  *         max: <number>
- *         type: <string>
+ *         type: <string> | [<string>, ...]
  *         datatype: <string> | [<string>, ...]
  *         description: <name>
  *         a: <class> | [<class>, ...]
@@ -71,7 +71,9 @@ interface RawYamaStatement {
 	max?: number | null;
 	/** Cardinality keyword (e.g. SimpleDSP `推奨`/recommended). */
 	cardinalityNote?: string;
-	type?: string;
+	/** Value node type(s). Scalar or array — a single node kind emits a
+	 * string, multiple kinds (e.g. `[IRI, BNODE]`) emit a sequence. */
+	type?: string | string[];
 	/** Datatype(s). Accepts scalar or array — legacy single-datatype
 	 * YAML emits a string; multi-datatype emits a sequence. */
 	datatype?: string | string[];
@@ -117,18 +119,26 @@ interface RawYamaDocument {
 // ── Value Type Resolution ───────────────────────────────────────
 
 /**
- * Resolves a YAMA `type` string to the Tapir `ValueType`.
+ * Resolves a YAMA `type` value (scalar or array) to the Tapir
+ * `valueType` list. `URI` normalises to `iri`; unrecognised tokens and
+ * duplicates are dropped while keeping order.
  *
- * @param type - The YAMA type string (e.g. "IRI", "literal", "BNODE").
- * @returns The corresponding Tapir `ValueType`.
+ * @param type - The YAMA type (e.g. "IRI", "literal", or `["IRI","BNODE"]`).
+ * @returns The corresponding Tapir value types (empty when none).
  */
-function resolveValueType(type: string | undefined): ValueType {
-	if (!type) return '';
-	const upper = type.toUpperCase();
-	if (upper === 'IRI' || upper === 'URI') return 'iri';
-	if (upper === 'LITERAL') return 'literal';
-	if (upper === 'BNODE') return 'bnode';
-	return '';
+function resolveValueType(type: string | string[] | undefined): ValueType[] {
+	if (!type) return [];
+	const out: ValueType[] = [];
+	for (const tok of Array.isArray(type) ? type : [type]) {
+		const upper = String(tok).toUpperCase();
+		let vt: ValueType | null;
+		if (upper === 'IRI' || upper === 'URI') vt = 'iri';
+		else if (upper === 'LITERAL') vt = 'literal';
+		else if (upper === 'BNODE') vt = 'bnode';
+		else vt = null;
+		if (vt && !out.includes(vt)) out.push(vt);
+	}
+	return out;
 }
 
 /**

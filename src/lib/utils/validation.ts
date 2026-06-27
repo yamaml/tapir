@@ -248,13 +248,19 @@ export function validateStatement(
 	const hasAnyShapeRef = shapeRefs.length > 0;
 
 	// 4. Value-type consistency
-	if (stmt.valueType === 'literal' && hasAnyShapeRef) {
+	if (stmt.valueType.includes('literal') && hasAnyShapeRef) {
 		warnings.push({
 			field: fieldKey,
 			message: msg.literalWithRef(stmtTerm, descTerm),
 		});
 	}
-	if (stmt.valueType === 'iri' && stmt.datatype.length > 0) {
+	// A datatype only makes sense for literal-valued statements. Warn
+	// when the statement is IRI-only (no literal branch to carry it).
+	if (
+		stmt.valueType.includes('iri') &&
+		!stmt.valueType.includes('literal') &&
+		stmt.datatype.length > 0
+	) {
 		warnings.push({
 			field: fieldKey,
 			message: msg.iriWithDatatype(stmtTerm),
@@ -274,7 +280,7 @@ export function validateStatement(
 			hasAnyShapeRef ||
 			(stmt.values && stmt.values.length > 0) ||
 			(stmt.classConstraint && stmt.classConstraint.length > 0);
-		if (hasConstraint && !stmt.valueType) {
+		if (hasConstraint && stmt.valueType.length === 0) {
 			warnings.push({
 				field: fieldKey,
 				message: msg.dctapConstraintNeedsNodeType(),

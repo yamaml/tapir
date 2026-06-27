@@ -13,7 +13,7 @@ describe('validateProject', () => {
 						propertyId: 'dc:title',
 						min: 1,
 						max: 1,
-						valueType: 'literal',
+						valueType: ['literal'],
 					}),
 				],
 			}),
@@ -140,7 +140,7 @@ describe('validateProject', () => {
 					// Two refs: one valid, one broken.
 					createStatement({
 						propertyId: 'dcterms:creator',
-						valueType: 'iri',
+						valueType: ['iri'],
 						shapeRefs: ['Person', 'Ghost'],
 					}),
 				],
@@ -162,7 +162,7 @@ describe('validateProject', () => {
 				statements: [
 					createStatement({
 						propertyId: 'dcterms:creator',
-						valueType: 'iri',
+						valueType: ['iri'],
 						shapeRefs: ['Person', 'Organization'],
 					}),
 				],

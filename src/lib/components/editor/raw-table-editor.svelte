@@ -6,6 +6,7 @@
 	import { parseCardinality } from '$lib/converters';
 	import {
 		parseValueTypeCell,
+		parseValueTypeCellList,
 		valueTypeSelectionUpdates,
 		parseSimpleDspConstraintCell,
 		parseDctapConstraintCell,
@@ -197,7 +198,7 @@
 					// 'structured' is derived from refs — keep current.
 					break;
 				}
-				updateStatement(desc.id, stmt.id, valueTypeSelectionUpdates(parsed));
+				updateStatement(desc.id, stmt.id, valueTypeSelectionUpdates(parsed, 'simpledsp'));
 				break;
 			}
 			case 5: { // Constraint — parse back with the display's precedence
@@ -280,10 +281,12 @@
 				break;
 			}
 			case 'valueNodeType': {
-				const parsed = parseValueTypeCell(editValue);
+				// DCTAP cells can carry multiple node kinds ("IRI BNODE"),
+				// so parse the whole cell as a list.
+				const parsed = parseValueTypeCellList(editValue);
 				// Unrecognised input never wipes the stored value.
-				if (parsed === null || parsed === 'structured') break;
-				updateStatement(desc.id, stmt.id, valueTypeSelectionUpdates(parsed));
+				if (parsed === null) break;
+				updateStatement(desc.id, stmt.id, valueTypeSelectionUpdates(parsed, 'dctap'));
 				break;
 			}
 			case 'valueDataType':

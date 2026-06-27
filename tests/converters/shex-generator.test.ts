@@ -82,19 +82,48 @@ describe('formatNodeConstraint', () => {
 		expect(formatNodeConstraint(stmt)).toBe('["red" "green" "blue"]');
 	});
 
+	it('escapes control characters in value-set literals so ShExC lexes', () => {
+		const stmt = createStatement({ values: ['line1\nline2', 'a\tb', 'q"x'] });
+		const out = formatNodeConstraint(stmt);
+		// No raw newline/tab survives inside the quoted members.
+		expect(out).not.toMatch(/[\n\t]/);
+		expect(out).toContain('line1\\nline2');
+		expect(out).toContain('a\\tb');
+		expect(out).toContain('q\\"x');
+	});
+
+	it('preserves the IRI requirement (with a warning) for inScheme/class constraints', () => {
+		const warnings: { message: string }[] = [];
+		const inSchemeStmt = createStatement({ valueType: ['iri'], inScheme: ['ex:'] });
+		expect(formatNodeConstraint(inSchemeStmt, warnings)).toBe('IRI');
+		const classStmt = createStatement({ classConstraint: ['foaf:Person'] });
+		expect(formatNodeConstraint(classStmt, warnings)).toBe('IRI');
+		// Both lossy cases are recorded rather than silently dropped.
+		expect(warnings).toHaveLength(2);
+	});
+
 	it('returns IRI for iri valueType', () => {
-		const stmt = createStatement({ valueType: 'iri' });
+		const stmt = createStatement({ valueType: ['iri'] });
 		expect(formatNodeConstraint(stmt)).toBe('IRI');
 	});
 
 	it('returns LITERAL for literal valueType', () => {
-		const stmt = createStatement({ valueType: 'literal' });
+		const stmt = createStatement({ valueType: ['literal'] });
 		expect(formatNodeConstraint(stmt)).toBe('LITERAL');
 	});
 
 	it('returns BNODE for bnode valueType', () => {
-		const stmt = createStatement({ valueType: 'bnode' });
+		const stmt = createStatement({ valueType: ['bnode'] });
 		expect(formatNodeConstraint(stmt)).toBe('BNODE');
+	});
+
+	it('returns a node-kind disjunction for multiple node kinds', () => {
+		expect(formatNodeConstraint(createStatement({ valueType: ['iri', 'bnode'] }))).toBe(
+			'(IRI OR BNODE)'
+		);
+		expect(formatNodeConstraint(createStatement({ valueType: ['iri', 'literal'] }))).toBe(
+			'(IRI OR LITERAL)'
+		);
 	});
 
 	it('defaults to LITERAL when no type specified', () => {
@@ -124,7 +153,7 @@ describe('formatNodeConstraint', () => {
 
 	it('emits IRI-typed value sets as IRI terms, not string literals', () => {
 		const stmt = createStatement({
-			valueType: 'iri',
+			valueType: ['iri'],
 			values: ['foaf:Person', 'http://example.org/Agent'],
 		});
 		expect(formatNodeConstraint(stmt)).toBe('[foaf:Person <http://example.org/Agent>]');
@@ -218,7 +247,7 @@ describe('buildShExC', () => {
 				statements: [
 					createStatement({
 						propertyId: 'foaf:name',
-						valueType: 'literal',
+						valueType: ['literal'],
 						datatype: ['xsd:string'],
 						min: 1,
 						max: 1,
@@ -243,7 +272,7 @@ describe('buildShExC', () => {
 			createDescription({
 				name: 'Person',
 				statements: [
-					createStatement({ propertyId: 'foaf:name', valueType: 'literal' }),
+					createStatement({ propertyId: 'foaf:name', valueType: ['literal'] }),
 					createStatement({ propertyId: 'foaf:age', datatype: ['xsd:integer'] }),
 				],
 			}),
@@ -258,8 +287,8 @@ describe('buildShExC', () => {
 			createDescription({
 				name: 'Thing',
 				statements: [
-					createStatement({ propertyId: '', valueType: 'literal' }),
-					createStatement({ propertyId: 'foaf:name', valueType: 'literal' }),
+					createStatement({ propertyId: '', valueType: ['literal'] }),
+					createStatement({ propertyId: 'foaf:name', valueType: ['literal'] }),
 				],
 			}),
 		];

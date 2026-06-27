@@ -186,7 +186,7 @@ export function validateStatementVocab(
 		const allClass = rangeKinds.every((k) => k === 'class');
 
 		// Check 3a: range is class but value declared as literal
-		if (allClass && stmt.valueType === 'literal') {
+		if (allClass && stmt.valueType.includes('literal')) {
 			warnings.push({
 				field: fieldKey,
 				message:
@@ -196,7 +196,7 @@ export function validateStatementVocab(
 			});
 		}
 		// Check 3b: range is literal/datatype but value declared as IRI
-		if (allLiteral && stmt.valueType === 'iri') {
+		if (allLiteral && stmt.valueType.includes('iri')) {
 			warnings.push({
 				field: fieldKey,
 				message:

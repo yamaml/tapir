@@ -52,6 +52,43 @@ export function expandPrefixed(
 	return base ? base + term : term;
 }
 
+/**
+ * Resolves a vocabulary-scheme *stem* to a real namespace IRI, or
+ * `null` when it cannot.
+ *
+ * Unlike {@link expandPrefixed}, this does NOT base-prepend an
+ * undeclared CURIE: a bare `ndlsh:` with no matching namespace is not a
+ * usable stem (base-prepending it yields a meaningless IRI that still
+ * carries the `:`), so it returns `null`. A valid stem is either a full
+ * `http(s)`/`urn` IRI, or a CURIE whose prefix is declared.
+ *
+ * @param stem - The scheme stem (CURIE prefix like `ndlsh:` or a full IRI).
+ * @param namespaces - Prefix-to-IRI map.
+ * @returns The resolved namespace IRI, or `null` when unresolvable.
+ *
+ * @example
+ * resolveSchemeStem('http://id.example/', {}); // => 'http://id.example/'
+ * resolveSchemeStem('ndlsh:', {}); // => null (undeclared prefix)
+ * resolveSchemeStem('ex:', { ex: 'http://ex.org/' }); // => 'http://ex.org/'
+ */
+export function resolveSchemeStem(
+	stem: string | null | undefined,
+	namespaces: NamespaceMap
+): string | null {
+	if (!stem) return null;
+	// Already a full IRI.
+	if (/^(https?|urn):/.test(stem)) return stem;
+	// CURIE: only valid if the prefix is declared.
+	const colon = stem.indexOf(':');
+	if (colon >= 0) {
+		const prefix = stem.substring(0, colon);
+		const local = stem.substring(colon + 1);
+		const ns = namespaces[prefix];
+		if (ns) return ns + local;
+	}
+	return null;
+}
+
 // ── Compression ─────────────────────────────────────────────────
 
 /**

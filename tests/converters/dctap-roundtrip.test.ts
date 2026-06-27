@@ -185,12 +185,14 @@ describe('DCTAP CSV round-trip with quoted newlines (S8)', () => {
 // ── Parser warnings ─────────────────────────────────────────────
 
 describe('DCTAP parser warnings', () => {
-	it('warns and keeps the first token for multi-token valueNodeType', () => {
+	it('keeps every token of a multi-token valueNodeType without warning', () => {
 		const result = dctapRowsToTapir([
 			{ shapeID: 'S', propertyID: 'dcterms:creator', valueNodeType: 'IRI BNODE' },
 		]);
-		expect(result.data.descriptions[0].statements[0].valueType).toBe('iri');
-		expect(result.warnings.some((w) => w.message.includes('IRI BNODE'))).toBe(true);
+		expect(result.data.descriptions[0].statements[0].valueType).toEqual(['iri', 'bnode']);
+		// No more lossy "keeping the first token" warning — the model holds
+		// all node kinds now.
+		expect(result.warnings.some((w) => w.message.includes('IRI BNODE'))).toBe(false);
 	});
 
 	it('merges later-row shapeLabel into a label-less shape', () => {
@@ -209,5 +211,43 @@ describe('DCTAP parser warnings', () => {
 		]);
 		expect(result.data.descriptions[0].label).toBe('First');
 		expect(result.warnings.some((w) => w.message.includes('conflicts'))).toBe(true);
+	});
+});
+
+// ── Multi-value valueNodeType round-trip ────────────────────────
+
+describe('DCTAP multi-value valueNodeType round-trip', () => {
+	// Tapir normalises casing on export: IRI uppercase, literal/bnode
+	// lowercase (the long-standing single-value convention). DCTAP is
+	// case-insensitive on read, so an authored "IRI BNODE" round-trips
+	// to the canonical "IRI bnode".
+	const cases: Array<{ input: string; canonical: string }> = [
+		{ input: 'IRI BNODE', canonical: 'IRI bnode' },
+		{ input: 'IRI bnode', canonical: 'IRI bnode' },
+		{ input: 'IRI literal', canonical: 'IRI literal' },
+	];
+	for (const { input, canonical } of cases) {
+		it(`re-emits "${input}" as "${canonical}" through a full round-trip`, () => {
+			const imported = dctapRowsToTapir([
+				{ shapeID: 'S', propertyID: 'dcterms:creator', valueNodeType: input },
+			]);
+			expect(imported.errors).toHaveLength(0);
+			const rows = buildDctapRows(imported.data);
+			expect(rows[0].valueNodeType).toBe(canonical);
+		});
+	}
+
+	it('preserves the value-type list through a text-level round-trip', () => {
+		const project = makeProject();
+		project.descriptions = [
+			createDescription({
+				name: 'S',
+				statements: [
+					createStatement({ propertyId: 'dcterms:creator', valueType: ['iri', 'bnode'] }),
+				],
+			}),
+		];
+		const back = roundTrip(project);
+		expect(back.descriptions[0].statements[0].valueType).toEqual(['iri', 'bnode']);
 	});
 });

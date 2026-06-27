@@ -53,7 +53,7 @@ describe('createStatement', () => {
 		// null max means explicitly unbounded — see types/profile.ts).
 		expect(stmt.min).toBeUndefined();
 		expect(stmt.max).toBeUndefined();
-		expect(stmt.valueType).toBe('');
+		expect(stmt.valueType).toEqual([]);
 		expect(stmt.values).toEqual([]);
 		expect(stmt.facets).toEqual({});
 		expect(stmt.inScheme).toEqual([]);

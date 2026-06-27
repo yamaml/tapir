@@ -77,7 +77,25 @@ export interface Statement {
 	 */
 	max?: number | null;
 	cardinalityNote: string;
-	valueType: ValueType;
+	/**
+	 * Value node type(s): how the object of the statement is shaped.
+	 *
+	 * Multi-valued semantics: when more than one type is present they
+	 * represent alternatives (logical OR) — a value may be any of them.
+	 * Authored across the ecosystem as:
+	 *   - DCTAP: space-separated `valueNodeType` cell, per the DCMI SRAP
+	 *     convention (e.g. `IRI BNODE`, `IRI literal`).
+	 *   - SimpleDSP: a single display type per row; a multi-type list
+	 *     collapses to one type on export (see simpledsp-generator).
+	 *   - SHACL: `sh:or` of nested `[sh:nodeKind X]` blank nodes
+	 *     (`sh:nodeKind` itself is single-valued).
+	 *   - ShEx: a parenthesised node-kind disjunction (`IRI OR LITERAL`).
+	 *   - YAMA: a scalar `type` when one, a sequence when many.
+	 *
+	 * Empty array = unspecified. `structured` is a *display-only* type
+	 * derived from `shapeRefs`/`classConstraint`; it is never stored here.
+	 */
+	valueType: ValueType[];
 	/**
 	 * Datatype constraint(s) for literal values.
 	 *
@@ -131,17 +149,19 @@ export type FacetName =
 	| 'FractionDigits';
 
 /**
- * Value type classification (flavor-neutral).
+ * Value type classification (flavor-neutral), one member of the
+ * `Statement.valueType` list.
  *
  * Display labels differ by flavor:
  *   - `literal` → SimpleDSP: "literal", DCTAP: "literal"
  *   - `iri`     → SimpleDSP: "IRI", DCTAP: "IRI"
  *   - `bnode`   → DCTAP only: "bnode"
  *
- * SimpleDSP `structured` and `id` are resolved at display time from
- * `shapeRef`/`classConstraint` fields, not stored as valueType.
+ * "Unspecified" is the empty `valueType` array — there is no empty-string
+ * member. SimpleDSP `structured` and `id` are resolved at display time
+ * from `shapeRef`/`classConstraint` fields, not stored as valueType.
  */
-export type ValueType = 'literal' | 'iri' | 'bnode' | '';
+export type ValueType = 'literal' | 'iri' | 'bnode';
 
 /** Metadata for the project index (stored in IndexedDB). */
 export interface ProjectMeta {
@@ -238,7 +258,7 @@ export function createDescription(
  * @returns A new Statement with a generated UUID and empty defaults.
  *
  * @example
- * const stmt = createStatement({ propertyId: 'foaf:name', valueType: 'literal' });
+ * const stmt = createStatement({ propertyId: 'foaf:name', valueType: ['literal'] });
  */
 export function createStatement(init?: Partial<Statement>): Statement {
 	return {
@@ -247,7 +267,7 @@ export function createStatement(init?: Partial<Statement>): Statement {
 		propertyId: '',
 		// min/max stay absent (undefined = unspecified); see Statement.
 		cardinalityNote: '',
-		valueType: '',
+		valueType: [],
 		datatype: [],
 		values: [],
 		pattern: '',

@@ -343,7 +343,7 @@ function generateKey(stmtName: string, property: string, usedKeys: Set<string>, 
  *   - `shapeRef` replaces YAMAML's `description` on statements
  *   - `classConstraint` (array) replaces YAMAML's `a` on statements
  *   - `targetClass` on Description replaces YAMAML's `a` on description
- *   - `valueType` uses Tapir's flavor-neutral types (`'literal'`, `'iri'`, `''`)
+ *   - `valueType` is a Tapir flavor-neutral list (`['literal']`, `['iri']`, `[]`)
  *   - Result wrapped in `ParseResult<TapirProject>` with warnings/errors
  *
  * @param blocks - Parsed SimpleDSP blocks.
@@ -465,7 +465,7 @@ export function simpleDspToTapir(
 			// Value type and constraint
 			switch (normalizedValueType) {
 				case 'literal':
-					stmt.valueType = 'literal';
+					stmt.valueType = ['literal'];
 					if (constraint) {
 						if (constraint.startsWith('"')) {
 							stmt.values = parseQuotedValues(constraint);
@@ -490,14 +490,14 @@ export function simpleDspToTapir(
 							.filter(Boolean);
 					} else if (constraint) {
 						const classes = constraint.split(/\s+/);
-						stmt.valueType = 'iri';
+						stmt.valueType = ['iri'];
 						stmt.classConstraint = classes;
 					}
 					break;
 
 
 				case 'iri':
-					stmt.valueType = 'iri';
+					stmt.valueType = ['iri'];
 					if (constraint) {
 						const raw = constraint.replace(/<([^>]+)>/g, '$1');
 						const parts = raw.split(/\s+/).filter(Boolean);

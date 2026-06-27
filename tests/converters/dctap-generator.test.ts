@@ -264,7 +264,7 @@ describe('buildDctapRows', () => {
 						label: 'Name',
 						min: 1,
 						max: 1,
-						valueType: 'literal',
+						valueType: ['literal'],
 						datatype: ['xsd:string'],
 						note: 'Full name',
 					}),
@@ -273,7 +273,7 @@ describe('buildDctapRows', () => {
 						label: 'Email',
 						min: 0,
 						max: null,
-						valueType: 'iri',
+						valueType: ['iri'],
 					}),
 				],
 			}),
@@ -369,7 +369,7 @@ describe('round-trip (generate -> parse)', () => {
 						label: 'Name',
 						min: 1,
 						max: 1,
-						valueType: 'literal',
+						valueType: ['literal'],
 						datatype: ['xsd:string'],
 						note: 'Full name',
 					}),
@@ -378,7 +378,7 @@ describe('round-trip (generate -> parse)', () => {
 						label: 'Email',
 						min: 0,
 						max: null,
-						valueType: 'iri',
+						valueType: ['iri'],
 					}),
 				],
 			}),
@@ -391,7 +391,7 @@ describe('round-trip (generate -> parse)', () => {
 						label: 'Title',
 						min: 1,
 						max: 1,
-						valueType: 'literal',
+						valueType: ['literal'],
 					}),
 					createStatement({
 						propertyId: 'dcterms:creator',
@@ -423,7 +423,7 @@ describe('round-trip (generate -> parse)', () => {
 		expect(name.label).toBe('Name');
 		expect(name.min).toBe(1);
 		expect(name.max).toBe(1);
-		expect(name.valueType).toBe('literal');
+		expect(name.valueType).toEqual(['literal']);
 		expect(name.datatype).toEqual(['xsd:string']);
 		expect(name.note).toBe('Full name');
 
@@ -431,7 +431,7 @@ describe('round-trip (generate -> parse)', () => {
 		expect(email.propertyId).toBe('foaf:mbox');
 		expect(email.min).toBe(0);
 		expect(email.max).toBeNull();
-		expect(email.valueType).toBe('iri');
+		expect(email.valueType).toEqual(['iri']);
 
 		// Second description
 		const book = parsed.descriptions[1];
@@ -443,7 +443,7 @@ describe('round-trip (generate -> parse)', () => {
 		expect(title.propertyId).toBe('dcterms:title');
 		expect(title.min).toBe(1);
 		expect(title.max).toBe(1);
-		expect(title.valueType).toBe('literal');
+		expect(title.valueType).toEqual(['literal']);
 
 		const author = book.statements[1];
 		expect(author.shapeRefs).toEqual(['PersonShape']);
@@ -519,7 +519,7 @@ describe('round-trip (generate -> parse)', () => {
 				statements: [
 					createStatement({
 						propertyId: 'dcterms:creator',
-						valueType: 'iri',
+						valueType: ['iri'],
 						shapeRefs: ['Person', 'Organization'],
 					}),
 				],
@@ -539,7 +539,7 @@ describe('round-trip (generate -> parse)', () => {
 				statements: [
 					createStatement({
 						propertyId: 'dcterms:creator',
-						valueType: 'iri',
+						valueType: ['iri'],
 						shapeRefs: ['Person', 'Organization'],
 					}),
 				],

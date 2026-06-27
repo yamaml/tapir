@@ -37,7 +37,7 @@
 
 import type { TapirProject, Description, Statement, NamespaceMap } from '$lib/types';
 import type { RdfFormat, GeneratorWarning } from '$lib/types/export';
-import { expandPrefixed } from '$lib/utils/iri-utils';
+import { expandPrefixed, resolveSchemeStem } from '$lib/utils/iri-utils';
 import { buildRdfList } from './shacl-generator';
 import {
 	buildResolutionMap,
@@ -150,7 +150,8 @@ export function buildStatementTemplate(
 	namespaces: NamespaceMap,
 	base: string,
 	quads: N3.Quad[],
-	usedIris: Set<string> = new Set()
+	usedIris: Set<string> = new Set(),
+	warnings?: GeneratorWarning[]
 ): N3.NamedNode {
 	const stmtIri = mintStatementIri(descName, stmt, base, usedIris);
 	const stmtNode = namedNode(stmtIri);
@@ -246,30 +247,38 @@ export function buildStatementTemplate(
 		}
 	}
 
-	// inScheme (vocabulary constraint)
+	// inScheme (vocabulary constraint). A stem must resolve to a real
+	// namespace URI; a bare prefix like `ndlsh:` that isn't declared
+	// would otherwise be emitted as a malformed IRI node, so it is
+	// skipped with a warning (same reading the SHACL generator gives).
 	if (stmt.inScheme && stmt.inScheme.length > 0) {
-		if (stmt.inScheme.length === 1) {
-			const schemeIri = expandPrefixed(stmt.inScheme[0], namespaces, base);
-			if (schemeIri) {
-				const anon = blankNode();
-				quads.push(quad(anon, DSP_IN_SCHEME, namedNode(schemeIri)));
-				quads.push(quad(stmtNode, OWL_ON_CLASS, anon));
-			}
-		} else {
-			const anonNodes: N3.BlankNode[] = [];
-			for (const s of stmt.inScheme) {
-				const sIri = expandPrefixed(s, namespaces, base);
-				if (!sIri) continue;
+		const schemeIris = stmt.inScheme
+			.map((s) => {
+				const iri = resolveSchemeStem(s, namespaces);
+				if (!iri) {
+					warnings?.push({
+						message: `Statement "${stmt.label || stmt.propertyId}": inScheme stem "${s}" does not resolve to a namespace URI — omitted from OWL-DSP output`,
+					});
+					return null;
+				}
+				return iri;
+			})
+			.filter((iri): iri is string => iri !== null);
+
+		if (schemeIris.length === 1) {
+			const anon = blankNode();
+			quads.push(quad(anon, DSP_IN_SCHEME, namedNode(schemeIris[0])));
+			quads.push(quad(stmtNode, OWL_ON_CLASS, anon));
+		} else if (schemeIris.length > 1) {
+			const anonNodes = schemeIris.map((sIri) => {
 				const anon = blankNode();
 				quads.push(quad(anon, DSP_IN_SCHEME, namedNode(sIri)));
-				anonNodes.push(anon);
-			}
-			if (anonNodes.length > 0) {
-				const listHead = buildRdfList(anonNodes, quads);
-				const unionAnon = blankNode();
-				quads.push(quad(unionAnon, OWL_UNION_OF, listHead));
-				quads.push(quad(stmtNode, OWL_ON_CLASS, unionAnon));
-			}
+				return anon;
+			});
+			const listHead = buildRdfList(anonNodes, quads);
+			const unionAnon = blankNode();
+			quads.push(quad(unionAnon, OWL_UNION_OF, listHead));
+			quads.push(quad(stmtNode, OWL_ON_CLASS, unionAnon));
 		}
 	}
 
@@ -279,7 +288,7 @@ export function buildStatementTemplate(
 		stmt.values.length > 0 &&
 		(!stmt.inScheme || stmt.inScheme.length === 0)
 	) {
-		const isIri = stmt.valueType === 'iri';
+		const isIri = stmt.valueType.includes('iri');
 		if (isIri) {
 			const items = stmt.values
 				.map((v) => expandPrefixed(String(v), namespaces, base))
@@ -351,7 +360,7 @@ export function buildDescriptionTemplate(
 
 	// Link each statement to the description via rdfs:subClassOf
 	for (const stmt of desc.statements || []) {
-		const stmtNode = buildStatementTemplate(desc.name, stmt, namespaces, base, quads, usedIris);
+		const stmtNode = buildStatementTemplate(desc.name, stmt, namespaces, base, quads, usedIris, warnings);
 		quads.push(quad(descNode, RDFS_SUBCLASS_OF, stmtNode));
 	}
 }

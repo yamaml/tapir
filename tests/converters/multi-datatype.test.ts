@@ -31,7 +31,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 function projectWithMultiDatatype(): ReturnType<typeof createProject> {
 	const stmt = createStatement({
 		propertyId: 'dct:date',
-		valueType: 'literal',
+		valueType: ['literal'],
 		datatype: ['xsd:gYear', 'xsd:gYearMonth', 'xsd:date'],
 	});
 	const desc = createDescription({ name: 'Resource', statements: [stmt] });

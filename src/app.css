@@ -80,6 +80,7 @@ samp {
 	--tapir-info: oklch(0.523 0.214 259);
 	--tapir-literal: oklch(0.45 0.2 145);
 	--tapir-iri: oklch(0.55 0.18 65);
+	--tapir-bnode: oklch(0.52 0.13 220);
 	--tapir-structured: oklch(0.5 0.2 295);
 }
 
@@ -111,6 +112,7 @@ samp {
 	--tapir-info: oklch(0.623 0.214 259);
 	--tapir-literal: oklch(0.65 0.2 145);
 	--tapir-iri: oklch(0.75 0.18 65);
+	--tapir-bnode: oklch(0.7 0.12 220);
 	--tapir-structured: oklch(0.6 0.2 295);
 }
 

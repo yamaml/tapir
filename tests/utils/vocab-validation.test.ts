@@ -42,7 +42,7 @@ describe('validateStatementVocab', () => {
 	it('emits no warnings for a valid foaf:name on a foaf:Person', () => {
 		const stmt = createStatement({
 			propertyId: 'foaf:name',
-			valueType: 'literal',
+			valueType: ['literal'],
 			datatype: ['xsd:string'],
 		});
 		const out = validateStatementVocab(stmt, desc, 'MAIN.name', makeVocabs(foaf, xsd));
@@ -50,14 +50,14 @@ describe('validateStatementVocab', () => {
 	});
 
 	it('warns on a class-range property declared as literal', () => {
-		const stmt = createStatement({ propertyId: 'foaf:knows', valueType: 'literal' });
+		const stmt = createStatement({ propertyId: 'foaf:knows', valueType: ['literal'] });
 		const out = validateStatementVocab(stmt, desc, 'MAIN.knows', makeVocabs(foaf));
 		expect(out).toHaveLength(1);
 		expect(out[0].message).toContain('expects an IRI/object');
 	});
 
 	it('warns on a literal-range property declared as IRI', () => {
-		const stmt = createStatement({ propertyId: 'foaf:name', valueType: 'iri' });
+		const stmt = createStatement({ propertyId: 'foaf:name', valueType: ['iri'] });
 		const out = validateStatementVocab(stmt, desc, 'MAIN.name', makeVocabs(foaf));
 		expect(out).toHaveLength(1);
 		expect(out[0].message).toContain('expects a literal');
@@ -66,7 +66,7 @@ describe('validateStatementVocab', () => {
 	it('warns on a datatype mismatch (foaf:age expects integer, declared string)', () => {
 		const stmt = createStatement({
 			propertyId: 'foaf:age',
-			valueType: 'literal',
+			valueType: ['literal'],
 			datatype: ['xsd:string'],
 		});
 		const out = validateStatementVocab(stmt, desc, 'MAIN.age', makeVocabs(foaf, xsd));
@@ -78,7 +78,7 @@ describe('validateStatementVocab', () => {
 		const docDesc = createDescription({ name: 'DOC', targetClass: 'foaf:Document' });
 		const stmt = createStatement({
 			propertyId: 'foaf:age',
-			valueType: 'literal',
+			valueType: ['literal'],
 			datatype: ['xsd:integer'],
 		});
 		const out = validateStatementVocab(stmt, docDesc, 'DOC.age', makeVocabs(foaf));
@@ -90,7 +90,7 @@ describe('validateStatementVocab', () => {
 		// foaf:name's domain is Agent; Person sc Agent → no warning.
 		const stmt = createStatement({
 			propertyId: 'foaf:name',
-			valueType: 'literal',
+			valueType: ['literal'],
 			datatype: ['xsd:string'],
 		});
 		const out = validateStatementVocab(stmt, desc, 'MAIN.name', makeVocabs(foaf));
@@ -100,7 +100,7 @@ describe('validateStatementVocab', () => {
 	// ── Skip-on-unknown semantics — these are the safety net ────
 
 	it('skips silently when the property prefix is unknown', () => {
-		const stmt = createStatement({ propertyId: 'custom:thing', valueType: 'literal' });
+		const stmt = createStatement({ propertyId: 'custom:thing', valueType: ['literal'] });
 		const out = validateStatementVocab(stmt, desc, 'MAIN.thing', makeVocabs(foaf));
 		expect(out).toHaveLength(0);
 	});
@@ -111,7 +111,7 @@ describe('validateStatementVocab', () => {
 			namespace: 'http://example.com/',
 			terms: { thing: { t: 'P', l: 'thing' } },
 		};
-		const stmt = createStatement({ propertyId: 'ex:thing', valueType: 'literal' });
+		const stmt = createStatement({ propertyId: 'ex:thing', valueType: ['literal'] });
 		const out = validateStatementVocab(stmt, desc, 'MAIN.thing', makeVocabs(sparse));
 		expect(out).toHaveLength(0);
 	});
@@ -119,7 +119,7 @@ describe('validateStatementVocab', () => {
 	it('skips datatype check when the datatype prefix is non-xsd', () => {
 		const stmt = createStatement({
 			propertyId: 'foaf:age',
-			valueType: 'literal',
+			valueType: ['literal'],
 			datatype: ['custom:weird'],
 		});
 		const out = validateStatementVocab(stmt, desc, 'MAIN.age', makeVocabs(foaf));
@@ -127,7 +127,7 @@ describe('validateStatementVocab', () => {
 	});
 
 	it('skips silently when statement has no propertyId', () => {
-		const stmt = createStatement({ propertyId: '', valueType: 'literal' });
+		const stmt = createStatement({ propertyId: '', valueType: ['literal'] });
 		const out = validateStatementVocab(stmt, desc, 'MAIN.empty', makeVocabs(foaf));
 		expect(out).toHaveLength(0);
 	});
@@ -145,7 +145,7 @@ describe('validateProject vocab-aware mode', () => {
 				statements: [
 					createStatement({
 						propertyId: 'foaf:age',
-						valueType: 'literal',
+						valueType: ['literal'],
 						datatype: ['xsd:integer'],
 					}),
 				],
@@ -167,7 +167,7 @@ describe('validateProject vocab-aware mode', () => {
 				statements: [
 					createStatement({
 						propertyId: 'foaf:age',
-						valueType: 'literal',
+						valueType: ['literal'],
 						datatype: ['xsd:integer'],
 					}),
 				],

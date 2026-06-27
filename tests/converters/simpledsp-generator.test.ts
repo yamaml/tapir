@@ -49,12 +49,12 @@ describe('resolveSimpleDspValueType', () => {
 	});
 
 	it('returns "IRI" for iri valueType', () => {
-		const stmt = createStatement({ valueType: 'iri' });
+		const stmt = createStatement({ valueType: ['iri'] });
 		expect(resolveSimpleDspValueType(stmt)).toBe('IRI');
 	});
 
 	it('returns "literal" for literal valueType', () => {
-		const stmt = createStatement({ valueType: 'literal' });
+		const stmt = createStatement({ valueType: ['literal'] });
 		expect(resolveSimpleDspValueType(stmt)).toBe('literal');
 	});
 
@@ -101,7 +101,7 @@ describe('resolveSimpleDspConstraint', () => {
 
 	it('returns quoted literal values', () => {
 		const stmt = createStatement({
-			valueType: 'literal',
+			valueType: ['literal'],
 			values: ['red', 'green'],
 		});
 		expect(resolveSimpleDspConstraint(stmt)).toBe('"red" "green"');
@@ -109,7 +109,7 @@ describe('resolveSimpleDspConstraint', () => {
 
 	it('returns unquoted IRI values', () => {
 		const stmt = createStatement({
-			valueType: 'iri',
+			valueType: ['iri'],
 			values: ['foaf:Person', 'foaf:Agent'],
 		});
 		expect(resolveSimpleDspConstraint(stmt)).toBe('foaf:Person foaf:Agent');
@@ -141,7 +141,7 @@ describe('buildSimpleDsp', () => {
 					createStatement({
 						label: 'Name',
 						propertyId: 'foaf:name',
-						valueType: 'literal',
+						valueType: ['literal'],
 					}),
 				],
 			}),
@@ -247,7 +247,7 @@ describe('buildSimpleDsp', () => {
 					createStatement({
 						label: 'Name',
 						propertyId: 'foaf:name',
-						valueType: 'literal',
+						valueType: ['literal'],
 					}),
 				],
 			}),
@@ -269,7 +269,7 @@ describe('buildSimpleDsp', () => {
 					createStatement({
 						label: 'Name',
 						propertyId: 'foaf:name',
-						valueType: 'literal',
+						valueType: ['literal'],
 					}),
 				],
 			}),
@@ -412,7 +412,7 @@ describe('buildSimpleDsp', () => {
 						propertyId: 'dcterms:title',
 						min: 1,
 						max: 1,
-						valueType: 'literal',
+						valueType: ['literal'],
 						datatype: ['xsd:string'],
 						note: 'Book title',
 					}),
@@ -435,7 +435,7 @@ describe('buildSimpleDsp', () => {
 						propertyId: 'foaf:name',
 						min: 1,
 						max: 1,
-						valueType: 'literal',
+						valueType: ['literal'],
 					}),
 				],
 			}),
@@ -470,7 +470,7 @@ describe('round-trip (generate -> parse)', () => {
 						propertyId: 'dcterms:title',
 						min: 1,
 						max: 1,
-						valueType: 'literal',
+						valueType: ['literal'],
 						datatype: ['xsd:string'],
 						note: 'Book title',
 					}),
@@ -479,7 +479,7 @@ describe('round-trip (generate -> parse)', () => {
 						propertyId: 'dcterms:subject',
 						min: 0,
 						max: null,
-						valueType: 'iri',
+						valueType: ['iri'],
 						inScheme: ['skos:'],
 					}),
 				],
@@ -492,7 +492,7 @@ describe('round-trip (generate -> parse)', () => {
 						propertyId: 'foaf:name',
 						min: 1,
 						max: 1,
-						valueType: 'literal',
+						valueType: ['literal'],
 					}),
 				],
 			}),
@@ -523,7 +523,7 @@ describe('round-trip (generate -> parse)', () => {
 		expect(title.propertyId).toBe('dcterms:title');
 		expect(title.min).toBe(1);
 		expect(title.max).toBe(1);
-		expect(title.valueType).toBe('literal');
+		expect(title.valueType).toEqual(['literal']);
 		expect(title.datatype).toEqual(['xsd:string']);
 		expect(title.note).toBe('Book title');
 
@@ -532,7 +532,7 @@ describe('round-trip (generate -> parse)', () => {
 		expect(subject.propertyId).toBe('dcterms:subject');
 		expect(subject.min).toBe(0);
 		expect(subject.max).toBeNull();
-		expect(subject.valueType).toBe('iri');
+		expect(subject.valueType).toEqual(['iri']);
 		expect(subject.inScheme).toEqual(['skos:']);
 
 		// Second description
@@ -566,7 +566,7 @@ describe('round-trip (generate -> parse)', () => {
 						propertyId: 'foaf:name',
 						min: 1,
 						max: 1,
-						valueType: 'literal',
+						valueType: ['literal'],
 					}),
 				],
 			}),
@@ -589,7 +589,7 @@ describe('round-trip (generate -> parse)', () => {
 					createStatement({
 						label: 'Status',
 						propertyId: 'ex:status',
-						valueType: 'literal',
+						valueType: ['literal'],
 						values: ['active', 'inactive', 'pending'],
 					}),
 				],

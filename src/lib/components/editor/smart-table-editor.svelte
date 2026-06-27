@@ -2,7 +2,13 @@
 	import type { Description, Flavor, Statement } from '$lib/types';
 	import { getFlavorLabels, getEditorStrings } from '$lib/types';
 	import { resolveSimpleDspConstraint } from '$lib/converters/simpledsp-generator';
-	import { displayValueType, commitCellEdit } from '$lib/utils/editor-cells';
+	import {
+		displayValueType,
+		displayValueTypes,
+		valueTypeSelectionUpdates,
+		commitCellEdit,
+		type DisplayValueType,
+	} from '$lib/utils/editor-cells';
 	import {
 		buildSmartTableColumns,
 		type SmartTableColumn,
@@ -19,6 +25,7 @@
 	import ConstraintEditor from '$lib/components/editor/constraint-editor.svelte';
 	import ShapeRefPicker from '$lib/components/editor/shape-ref-picker.svelte';
 	import DatatypePicker from '$lib/components/editor/datatype-picker.svelte';
+	import ValueTypePicker from '$lib/components/editor/value-type-picker.svelte';
 	import Tip from '$lib/components/ui/tip.svelte';
 
 	const DATATYPE_OPTIONS = [
@@ -122,16 +129,23 @@
 		}
 		if (col.field === 'valueType') {
 			if (flavor === 'dctap') {
+				// DCTAP node kinds are space-joined (e.g. "IRI bnode"),
+				// matching the native valueNodeType cell.
 				const map: Record<string, string> = { literal: 'literal', iri: 'IRI', bnode: 'bnode' };
-				return map[stmt.valueType] || '';
+				return stmt.valueType.map((t) => map[t] ?? t).join(' ');
 			}
 			// SimpleDSP display value types ('structured' is derived from
-			// shapeRefs/classConstraint presence — see utils/editor-cells)
-			const dv = displayValueType(stmt);
-			if (dv === 'structured') return labels.valueTypes.structured;
-			if (dv === 'iri') return labels.valueTypes.iri;
-			if (dv === 'literal') return labels.valueTypes.literal;
-			return '';
+			// shapeRefs/classConstraint presence — see utils/editor-cells).
+			const labelFor: Record<string, string> = {
+				structured: labels.valueTypes.structured,
+				iri: labels.valueTypes.iri,
+				literal: labels.valueTypes.literal,
+				bnode: labels.valueTypes.bnode,
+			};
+			return displayValueTypes(stmt)
+				.map((dv) => labelFor[dv] ?? '')
+				.filter(Boolean)
+				.join(' ');
 		}
 		if (col.field === 'constraint') {
 			// SimpleDSP: smart-table mirrors the 7 native file columns, so
@@ -168,11 +182,30 @@
 	}
 
 	function getValueTypeColor(stmt: Statement): string {
-		const dv = displayValueType(stmt);
+		const dv = displayValueType(stmt, flavor);
 		if (dv === 'structured') return 'text-[var(--tapir-structured)]';
 		if (dv === 'literal') return 'text-[var(--tapir-literal)]';
 		if (dv === 'iri') return 'text-[var(--tapir-iri)]';
 		return '';
+	}
+
+	/**
+	 * Applies a value-type selection from the cell's chip picker. When the
+	 * user picks `structured` (SimpleDSP) but the statement has no shape
+	 * refs or class constraints yet, the constraint popover opens so they
+	 * can pick the target — the same affordance the inline select used.
+	 */
+	function setCellValueTypes(stmt: Statement, next: DisplayValueType[]) {
+		updateStatement(description.id, stmt.id, valueTypeSelectionUpdates(next, flavor));
+		const choseStructured = next.length === 1 && next[0] === 'structured';
+		if (
+			choseStructured &&
+			flavor === 'simpledsp' &&
+			!(stmt.shapeRefs?.length || stmt.classConstraint?.length)
+		) {
+			const rowIdx = description.statements.findIndex((s) => s.id === stmt.id);
+			if (rowIdx >= 0) constraintPopoverRow = `${rowIdx}`;
+		}
 	}
 
 	function startEdit(rowIndex: number, colIndex: number, stmt: Statement, col: SmartTableColumn) {
@@ -397,6 +430,22 @@
 										onchange={(next) => updateStatement(description.id, stmt.id, { datatype: next })}
 									/>
 								</td>
+							{:else if $assistanceEnabled && col.field === 'valueType'}
+								<!--
+									Value-type cell with assistance on is always the
+									multi-select chip picker — a value may be more than one
+									node kind (e.g. DCTAP "IRI BNODE"). Same always-a-picker
+									affordance as the shapeRefs/datatype cells.
+								-->
+								<td class="px-1 py-0.5 align-middle">
+									<ValueTypePicker
+										dense
+										selected={displayValueTypes(stmt, flavor)}
+										{flavor}
+										lang={$simpleDspLang}
+										onchange={(next) => setCellValueTypes(stmt, next)}
+									/>
+								</td>
 							{:else if editingCell === `${rowIndex}-${colIndex}`}
 								<td class="px-0.5 py-0.5">
 									{#if $assistanceEnabled && col.field === 'propertyId'}
@@ -412,30 +461,6 @@
 												commitEdit(stmt, col);
 											}}
 										/>
-									{:else if $assistanceEnabled && col.field === 'valueType'}
-										<!-- Smart: ValueType dropdown -->
-										<select
-											class="w-full h-7 px-1 text-xs bg-background border border-ring rounded focus:outline-none focus:ring-1 focus:ring-ring"
-											value={editValue}
-											onchange={(e) => {
-												editValue = (e.target as HTMLSelectElement).value;
-												commitEdit(stmt, col);
-											}}
-											onblur={() => { if (!suppressBlurCommit) commitEdit(stmt, col); }}
-											use:focusOnMount
-										>
-											{#if flavor === 'dctap'}
-												<option value="">(empty)</option>
-												<option value="literal">literal</option>
-												<option value="IRI">IRI</option>
-												<option value="bnode">bnode</option>
-											{:else}
-												<option value="">{labels.valueTypes.empty}</option>
-												<option value={labels.valueTypes.literal}>{labels.valueTypes.literal}</option>
-												<option value={labels.valueTypes.iri}>{labels.valueTypes.iri}</option>
-												<option value={labels.valueTypes.structured}>{labels.valueTypes.structured}</option>
-											{/if}
-										</select>
 									{:else if $assistanceEnabled && col.field === 'min' && flavor === 'dctap'}
 										<!-- Smart: mandatory TRUE/FALSE dropdown -->
 										<select

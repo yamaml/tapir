@@ -197,7 +197,7 @@ describe('simpleDspToTapir', () => {
 		expect(stmt.propertyId).toBe('foaf:name');
 		expect(stmt.min).toBe(1);
 		expect(stmt.max).toBe(1);
-		expect(stmt.valueType).toBe('literal');
+		expect(stmt.valueType).toEqual(['literal']);
 		expect(stmt.datatype).toEqual(['xsd:string']);
 		expect(stmt.note).toBe('The person name');
 	});
@@ -223,7 +223,7 @@ describe('simpleDspToTapir', () => {
 		const result = simpleDspToTapir(blocks, {});
 		const stmt = result.data.descriptions[0].statements[0];
 		expect(stmt.shapeRefs).toEqual(['AgentShape']);
-		expect(stmt.valueType).toBe('');
+		expect(stmt.valueType).toEqual([]);
 	});
 
 	it('converts structured statement with class constraint', () => {
@@ -247,7 +247,7 @@ describe('simpleDspToTapir', () => {
 		const result = simpleDspToTapir(blocks, {});
 		const stmt = result.data.descriptions[0].statements[0];
 		expect(stmt.classConstraint).toEqual(['foaf:Agent', 'foaf:Person']);
-		expect(stmt.valueType).toBe('iri');
+		expect(stmt.valueType).toEqual(['iri']);
 	});
 
 	it('converts reference statement', () => {
@@ -270,7 +270,7 @@ describe('simpleDspToTapir', () => {
 
 		const result = simpleDspToTapir(blocks, {});
 		const stmt = result.data.descriptions[0].statements[0];
-		expect(stmt.valueType).toBe('iri');
+		expect(stmt.valueType).toEqual(['iri']);
 		expect(stmt.inScheme).toEqual(['skos:']);
 		expect(stmt.note).toBe('Subject heading');
 	});
@@ -375,7 +375,7 @@ describe('simpleDspToTapir', () => {
 
 		const result = simpleDspToTapir(blocks, {});
 		const stmt = result.data.descriptions[0].statements[0];
-		expect(stmt.valueType).toBe('literal');
+		expect(stmt.valueType).toEqual(['literal']);
 	});
 
 	it('handles cardinality keywords (cardinalityNote)', () => {

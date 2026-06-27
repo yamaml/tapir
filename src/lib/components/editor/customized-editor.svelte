@@ -3,6 +3,7 @@
 	import { getFlavorLabels, getEditorStrings } from '$lib/types';
 	import {
 		displayValueType,
+		displayValueTypes,
 		valueTypeSelectionUpdates,
 		type DisplayValueType,
 	} from '$lib/utils/editor-cells';
@@ -17,6 +18,7 @@
 	import ConstraintEditor from '$lib/components/editor/constraint-editor.svelte';
 	import ShapeRefPicker from '$lib/components/editor/shape-ref-picker.svelte';
 	import DatatypePicker from '$lib/components/editor/datatype-picker.svelte';
+	import ValueTypePicker from '$lib/components/editor/value-type-picker.svelte';
 	import Tip from '$lib/components/ui/tip.svelte';
 	import FieldLabel from '$lib/components/ui/field-label.svelte';
 	import { validateField } from '$lib/utils/validation';
@@ -151,20 +153,11 @@
 		return `${min}..${max}`;
 	}
 
-	function getValueTypeOptions(): Array<{ value: string; label: string }> {
-		const vt = labels.valueTypes;
-		const options: Array<{ value: string; label: string }> = [
-			{ value: '', label: vt.empty || '(none)' },
-			{ value: 'literal', label: vt.literal },
-			{ value: 'iri', label: vt.iri },
-		];
-		if (flavor === 'simpledsp') {
-			options.push({ value: 'structured', label: vt.structured });
-		}
-		if (flavor === 'dctap') {
-			options.push({ value: 'bnode', label: vt.bnode });
-		}
-		return options;
+	/** Display value types currently selected (includes derived 'structured'). */
+	function selectedValueTypes(stmt: Statement): DisplayValueType[] {
+		const dv = displayValueTypes(stmt, flavor);
+		if (dv.length === 0 && structuredIntent[stmt.id]) return ['structured'];
+		return dv;
 	}
 
 	/** Get all other descriptions for shape reference dropdown. */
@@ -186,16 +179,10 @@
 	 */
 	let structuredIntent = $state<Record<string, boolean>>({});
 
-	/** Display value type for the selector (includes derived 'structured'). */
-	function displayVT(stmt: Statement): string {
-		const dv = displayValueType(stmt);
-		if (dv === 'structured') return 'structured';
-		return structuredIntent[stmt.id] ? 'structured' : dv;
-	}
-
 	/** Whether the statement should show a shape reference selector. */
 	function isStructured(stmt: Statement): boolean {
-		return displayVT(stmt) === 'structured';
+		if (displayValueType(stmt) === 'structured') return true;
+		return !!structuredIntent[stmt.id];
 	}
 
 	const DATATYPE_OPTIONS = [
@@ -228,23 +215,27 @@
 	];
 
 	function handleStmtField(stmtId: string, field: keyof Statement, value: string) {
-		if (field === 'valueType') {
-			// 'structured' is never stored in valueType — the selection
-			// reveals the reference/class inputs (tracked via
-			// structuredIntent until a ref exists) and the display is
-			// derived from shapeRefs/classConstraint presence.
-			const sel = value as DisplayValueType;
-			if (sel === 'structured') {
-				structuredIntent = { ...structuredIntent, [stmtId]: true };
-			} else if (structuredIntent[stmtId]) {
-				const next = { ...structuredIntent };
-				delete next[stmtId];
-				structuredIntent = next;
-			}
-			updateStatement(description.id, stmtId, valueTypeSelectionUpdates(sel));
-		} else {
-			updateStatement(description.id, stmtId, { [field]: value });
+		updateStatement(description.id, stmtId, { [field]: value });
+	}
+
+	/**
+	 * Applies a new value-type selection from the picker.
+	 *
+	 * `'structured'` is never stored in `valueType` (it is derived from
+	 * `shapeRefs`/`classConstraint`). When the user selects it with no
+	 * ref/class yet, the transient `structuredIntent` flag keeps the
+	 * reference picker visible until the choice materialises. Selecting
+	 * any node kind (or clearing) drops that intent.
+	 */
+	function setValueTypes(stmt: Statement, next: DisplayValueType[]) {
+		if (next.length === 1 && next[0] === 'structured') {
+			structuredIntent = { ...structuredIntent, [stmt.id]: true };
+		} else if (structuredIntent[stmt.id]) {
+			const cleared = { ...structuredIntent };
+			delete cleared[stmt.id];
+			structuredIntent = cleared;
 		}
+		updateStatement(description.id, stmt.id, valueTypeSelectionUpdates(next, flavor));
 	}
 
 	function handleAddStatement() {
@@ -501,22 +492,12 @@
 						>
 							{labels.columns.valueType}
 						</FieldLabel>
-						<Select
-							type="single"
-							value={displayVT(stmt)}
-							onValueChange={(v: string) => handleStmtField(stmt.id, 'valueType', v)}
-						>
-							<SelectTrigger class="h-7 text-xs">
-								{#snippet children()}
-									<span>{getValueTypeOptions().find(o => o.value === displayVT(stmt))?.label || '(none)'}</span>
-								{/snippet}
-							</SelectTrigger>
-							<SelectContent>
-								{#each getValueTypeOptions() as opt}
-									<SelectItem value={opt.value} label={opt.label} />
-								{/each}
-							</SelectContent>
-						</Select>
+						<ValueTypePicker
+							selected={selectedValueTypes(stmt)}
+							{flavor}
+							lang={$simpleDspLang}
+							onchange={(next) => setValueTypes(stmt, next)}
+						/>
 					</div>
 					<!--
 						Datatype (shown when literal). Multi-valued via chip
@@ -526,7 +507,7 @@
 						datatypes (e.g. `edtf:EDTF`) are added through the
 						picker's free-text affordance.
 					-->
-					{#if stmt.valueType === 'literal'}
+					{#if stmt.valueType.includes('literal')}
 						<div class="grid gap-1">
 							<FieldLabel
 								class={labelClass}
@@ -663,7 +644,7 @@
 						<!-- valueShape (DCTAP): only valid when valueNodeType is IRI or bnode,
 							 per the DCTAP spec (Primer §valueShape). Multi-shape is serialised
 							 space-separated, following the DCMI SRAP convention. -->
-						{#if stmt.valueType === 'iri' || stmt.valueType === 'bnode'}
+						{#if stmt.valueType.includes('iri') || stmt.valueType.includes('bnode')}
 							<div class="grid gap-1">
 								<FieldLabel
 									class={labelClass}

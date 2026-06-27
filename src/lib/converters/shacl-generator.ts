@@ -23,6 +23,7 @@
  * | Statement.valueType (iri)  | sh:nodeKind sh:IRI            |
  * | Statement.valueType (literal) | sh:nodeKind sh:Literal     |
  * | Statement.valueType (bnode)| sh:nodeKind sh:BlankNodeOrIRI |
+ * | Statement.valueType (many) | sh:or ([sh:nodeKind ... ])    |
  * | Statement.shapeRefs (single) | sh:node                       |
  * | Statement.shapeRefs (many)   | sh:or ([sh:node ... ])        |
  * | Statement.classConstraint  | sh:class (sh:or when many)     |
@@ -50,7 +51,7 @@
 
 import type { TapirProject, Statement, NamespaceMap } from '$lib/types';
 import type { RdfFormat, GeneratorWarning } from '$lib/types/export';
-import { expandPrefixed } from '$lib/utils/iri-utils';
+import { expandPrefixed, resolveSchemeStem } from '$lib/utils/iri-utils';
 import {
 	buildResolutionMap,
 	collectUsedPrefixes,
@@ -95,6 +96,7 @@ const SH_BLANK_NODE_OR_IRI = namedNode(`${SH}BlankNodeOrIRI`);
 const SH_CLOSED = namedNode(`${SH}closed`);
 const SH_IGNORED_PROPERTIES = namedNode(`${SH}ignoredProperties`);
 const SH_OR = namedNode(`${SH}or`);
+const SH_AND = namedNode(`${SH}and`);
 
 const RDF_TYPE = namedNode(`${RDF}type`);
 const RDF_FIRST = namedNode(`${RDF}first`);
@@ -225,10 +227,18 @@ export function buildPropertyShape(
 		quads.push(quad(propNode, SH_MAX_COUNT, literal(String(stmt.max), XSD_INTEGER)));
 	}
 
+	// Each multi-valued constraint family (datatype, node kind, shape,
+	// class, scheme) expresses a disjunction. A single value emits a
+	// flat constraint; multiple values emit a sh:or list. When two or
+	// more families each need a sh:or, putting several sh:or triples on
+	// one property shape is ambiguous to some processors, so they are
+	// combined under a single sh:and of [sh:or (...)] sub-shapes (the
+	// families are a conjunction: every one must hold). orGroups
+	// collects each family's list-head until the end.
+	const orGroups: Array<N3.BlankNode | N3.NamedNode> = [];
+
 	// sh:datatype. sh:datatype itself is single-valued in SHACL, so
-	// multi-datatype becomes sh:or of nested [sh:datatype X] blank
-	// nodes — the canonical SHACL pattern for "datatype is one of".
-	// Mirrors the multi-shape sh:or block below.
+	// multi-datatype becomes sh:or of nested [sh:datatype X] blank nodes.
 	const datatypes = stmt.datatype ?? [];
 	if (datatypes.length === 1) {
 		const dtIri = expandPrefixed(datatypes[0], namespaces, base);
@@ -246,16 +256,26 @@ export function buildPropertyShape(
 			})
 			.filter((n): n is ReturnType<typeof blankNode> => n !== null);
 		if (dtAnons.length > 0) {
-			const listHead = buildRdfList(dtAnons, quads);
-			quads.push(quad(propNode, SH_OR, listHead));
+			orGroups.push(buildRdfList(dtAnons, quads));
 		}
 	}
 
-	// sh:nodeKind (only when no datatype -- datatype already implies Literal)
+	// sh:nodeKind (only when no datatype -- datatype already implies
+	// Literal). A single node kind emits a flat sh:nodeKind; multiple
+	// kinds become sh:or of nested [sh:nodeKind X] blank nodes.
 	if (datatypes.length === 0) {
-		const nodeKind = resolveNodeKind(stmt.valueType);
-		if (nodeKind) {
-			quads.push(quad(propNode, SH_NODE_KIND, nodeKind));
+		const nodeKinds = stmt.valueType
+			.map(resolveNodeKind)
+			.filter((n): n is N3.NamedNode => n !== null);
+		if (nodeKinds.length === 1) {
+			quads.push(quad(propNode, SH_NODE_KIND, nodeKinds[0]));
+		} else if (nodeKinds.length > 1) {
+			const nkAnons = nodeKinds.map((nk) => {
+				const anon = blankNode();
+				quads.push(quad(anon, SH_NODE_KIND, nk));
+				return anon;
+			});
+			orGroups.push(buildRdfList(nkAnons, quads));
 		}
 	}
 
@@ -271,8 +291,7 @@ export function buildPropertyShape(
 			quads.push(quad(anon, SH_NODE, namedNode(refIri)));
 			return anon;
 		});
-		const listHead = buildRdfList(nodeAnons, quads);
-		quads.push(quad(propNode, SH_OR, listHead));
+		orGroups.push(buildRdfList(nodeAnons, quads));
 	}
 
 	// sh:class -- class constraint on the value node (sh:or when many).
@@ -293,7 +312,7 @@ export function buildPropertyShape(
 			})
 			.filter((n): n is ReturnType<typeof blankNode> => n !== null);
 		if (classAnons.length > 0) {
-			quads.push(quad(propNode, SH_OR, buildRdfList(classAnons, quads)));
+			orGroups.push(buildRdfList(classAnons, quads));
 		}
 	}
 
@@ -302,8 +321,8 @@ export function buildPropertyShape(
 	// the value IRI (the same reading DCTAP gives IRIstem).
 	const schemes = (stmt.inScheme ?? [])
 		.map((s) => {
-			const iri = expandPrefixed(s, namespaces, base);
-			if (!iri || !/^(https?|urn):/.test(iri)) {
+			const iri = resolveSchemeStem(s, namespaces);
+			if (!iri) {
 				warnings?.push({
 					message: `Statement "${stmt.label || stmt.propertyId}": inScheme stem "${s}" does not resolve to a namespace URI — omitted from SHACL output`,
 				});
@@ -320,7 +339,21 @@ export function buildPropertyShape(
 			quads.push(quad(anon, SH_PATTERN, literal(`^${escapeRegex(s)}`)));
 			return anon;
 		});
-		quads.push(quad(propNode, SH_OR, buildRdfList(schemeAnons, quads)));
+		orGroups.push(buildRdfList(schemeAnons, quads));
+	}
+
+	// Emit the collected disjunctions. One family → a single sh:or.
+	// Two or more → wrap each in its own [sh:or (...)] sub-shape and
+	// conjoin them under sh:and so the shape is unambiguous.
+	if (orGroups.length === 1) {
+		quads.push(quad(propNode, SH_OR, orGroups[0]));
+	} else if (orGroups.length > 1) {
+		const andMembers = orGroups.map((listHead) => {
+			const sub = blankNode();
+			quads.push(quad(sub, SH_OR, listHead));
+			return sub;
+		});
+		quads.push(quad(propNode, SH_AND, buildRdfList(andMembers, quads)));
 	}
 
 	// Facets
@@ -369,7 +402,7 @@ export function buildPropertyShape(
 		if ((stmt.constraintType || '').toLowerCase() === 'languagetag') {
 			const items = stmt.values.map((v) => literal(String(v)));
 			quads.push(quad(propNode, SH_LANGUAGE_IN, buildRdfList(items, quads)));
-		} else if (stmt.valueType === 'iri') {
+		} else if (stmt.valueType.includes('iri')) {
 			const items = stmt.values
 				.map((v) => expandPrefixed(String(v), namespaces, base))
 				.filter((iri): iri is string => !!iri)

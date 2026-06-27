@@ -13,7 +13,7 @@
  */
 
 import { openDB, type IDBPDatabase } from 'idb';
-import type { TapirProject, ProjectMeta, ProjectSnapshot } from '$lib/types';
+import type { TapirProject, ProjectMeta, ProjectSnapshot, ValueType } from '$lib/types';
 
 // ── Database Setup ──────────────────────────────────────────────
 
@@ -52,19 +52,27 @@ function getDb(): Promise<IDBPDatabase> {
 /**
  * In-place tolerant read for legacy projects.
  *
- * `Statement.datatype` was a `string` before multi-datatype support
- * landed; older IndexedDB records still carry that shape. This shim
- * promotes any string-typed `datatype` to an array on read, splitting
- * on whitespace so values authored as `"xsd:gYear xsd:date"` (the
- * SimpleDSP and SRAP convention) survive the migration without loss.
+ * Two fields changed from scalar to array as multi-value support landed:
+ *
+ *   - `Statement.datatype` was a `string`; this promotes it to an array,
+ *     splitting on whitespace so `"xsd:gYear xsd:date"` (the SimpleDSP
+ *     and SRAP convention) survives without loss.
+ *   - `Statement.valueType` was a single `'literal' | 'iri' | 'bnode' |
+ *     ''` value; this promotes it to a list. The legacy `''` and the
+ *     out-of-union `'structured'` string both map to `[]` (`structured`
+ *     is derived from refs, never stored), and a whitespace-separated
+ *     legacy cell like `"IRI BNODE"` is split into its node kinds.
+ *
+ * Without this, an older record's scalar `valueType` would reach the
+ * converters' `.map()`/`.includes()` calls and crash on export.
  *
  * Exported so every path that resurrects stored project data runs the
  * same normalisation: `loadProject` here, and the version-history
- * restore flow (snapshots saved before the multi-datatype change carry
- * the legacy shape too).
+ * restore flow (snapshots saved before the change carry the legacy
+ * shape too).
  *
  * @param project - The stored project record (mutated in place).
- * @returns The same project with normalised `datatype` arrays.
+ * @returns The same project with normalised array fields.
  */
 export function migrateLegacyDatatype(project: TapirProject): TapirProject {
 	for (const desc of project.descriptions ?? []) {
@@ -74,6 +82,16 @@ export function migrateLegacyDatatype(project: TapirProject): TapirProject {
 				stmt.datatype = dt.split(/\s+/).filter(Boolean);
 			} else if (!Array.isArray(dt)) {
 				stmt.datatype = [];
+			}
+
+			const vt = (stmt as unknown as { valueType: unknown }).valueType;
+			if (typeof vt === 'string') {
+				stmt.valueType = vt
+					.split(/\s+/)
+					.map((t) => t.toLowerCase())
+					.filter((t): t is ValueType => t === 'iri' || t === 'literal' || t === 'bnode');
+			} else if (!Array.isArray(vt)) {
+				stmt.valueType = [];
 			}
 		}
 	}

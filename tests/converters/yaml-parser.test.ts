@@ -77,7 +77,7 @@ descriptions:
 		expect(stmt.label).toBe('Name');
 		expect(stmt.min).toBe(1);
 		expect(stmt.max).toBe(1);
-		expect(stmt.valueType).toBe('literal');
+		expect(stmt.valueType).toEqual(['literal']);
 		expect(stmt.datatype).toEqual(['xsd:string']);
 		expect(stmt.note).toBe('Full name');
 	});
@@ -93,7 +93,7 @@ descriptions:
 `;
 		const result = parseYamaYaml(yaml);
 		const stmt = result.data.descriptions[0].statements[0];
-		expect(stmt.valueType).toBe('iri');
+		expect(stmt.valueType).toEqual(['iri']);
 	});
 
 	it('resolves BNODE value type', () => {
@@ -107,7 +107,7 @@ descriptions:
 `;
 		const result = parseYamaYaml(yaml);
 		const stmt = result.data.descriptions[0].statements[0];
-		expect(stmt.valueType).toBe('bnode');
+		expect(stmt.valueType).toEqual(['bnode']);
 	});
 
 	it('parses shape references (description field)', () => {
@@ -256,7 +256,7 @@ descriptions:
 
 		const author = series.statements[1];
 		expect(author.shapeRefs).toEqual(['creator']);
-		expect(author.valueType).toBe('iri');
+		expect(author.valueType).toEqual(['iri']);
 		expect(author.min).toBe(1);
 		expect(author.max).toBeUndefined();
 	});

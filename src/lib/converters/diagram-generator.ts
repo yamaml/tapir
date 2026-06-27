@@ -183,9 +183,14 @@ export function typeLabel(stmt: Statement, ns: NamespaceMap): string {
 	if (stmt.datatype && stmt.datatype.length > 0) {
 		return stmt.datatype.map((dt) => compactIRI(dt, ns)).join(' ');
 	}
-	if (stmt.valueType === 'iri') return 'URI';
-	if (stmt.valueType === 'literal') return 'Literal';
-	if (stmt.valueType) return stmt.valueType;
+	if (stmt.valueType.length > 0) {
+		const diagramLabel: Record<string, string> = {
+			iri: 'URI',
+			literal: 'Literal',
+			bnode: 'bnode',
+		};
+		return stmt.valueType.map((t) => diagramLabel[t] ?? t).join(' / ');
+	}
 	return '\u00A0';
 }
 

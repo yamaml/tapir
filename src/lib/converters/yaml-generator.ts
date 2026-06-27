@@ -32,14 +32,17 @@ import type { TapirProject, Description, Statement, FacetName } from '$lib/types
 /**
  * Converts Tapir `ValueType` back to the YAMA `type` string.
  *
- * @param valueType - The Tapir value type.
- * @returns The YAMA type string, or undefined if not applicable.
+ * @param valueTypes - The Tapir value types.
+ * @returns The YAMA type tokens (empty when none applicable).
  */
-function resolveYamaType(valueType: string): string | undefined {
-	if (valueType === 'iri') return 'IRI';
-	if (valueType === 'literal') return 'literal';
-	if (valueType === 'bnode') return 'BNODE';
-	return undefined;
+function resolveYamaTypes(valueTypes: readonly string[]): string[] {
+	const out: string[] = [];
+	for (const vt of valueTypes) {
+		if (vt === 'iri') out.push('IRI');
+		else if (vt === 'literal') out.push('literal');
+		else if (vt === 'bnode') out.push('BNODE');
+	}
+	return out;
 }
 
 // ── Statement Serializer ────────────────────────────────────────
@@ -77,8 +80,10 @@ function serializeStatement(stmt: Statement): Record<string, unknown> {
 	// keyword dies passing through the canonical YAML format.
 	if (stmt.cardinalityNote) obj.cardinalityNote = stmt.cardinalityNote;
 
-	const yamaType = resolveYamaType(stmt.valueType);
-	if (yamaType) obj.type = yamaType;
+	// Value node type(s). Scalar when single, array when multiple — same
+	// scalar-or-array convention as `description`/`a`/`inScheme`.
+	const yamaTypes = resolveYamaTypes(stmt.valueType);
+	if (yamaTypes.length > 0) obj.type = yamaTypes.length === 1 ? yamaTypes[0] : yamaTypes;
 
 	// Datatype(s). Multi-datatype is endorsed by SimpleDSP and used by
 	// DCMI SRAP; YAMAML serialises as a YAML sequence even for a single

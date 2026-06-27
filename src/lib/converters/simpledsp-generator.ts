@@ -55,23 +55,27 @@ const VALUE_TYPE_JP: Record<string, string> = {
  *
  *   - `shapeRef` present → `"structured"`
  *   - `classConstraint` present → `"structured"`
- *   - `valueType === 'iri'` → `"IRI"`
- *   - `valueType === 'literal'` or has `datatype`/`values` → `"literal"`
+ *   - `valueType` includes `iri` → `"IRI"`
+ *   - `valueType` includes `literal` or has `datatype`/`values` → `"literal"`
  *   - Otherwise → `""` (no constraint)
+ *
+ * SimpleDSP cannot express multiple node kinds in one row. A multi-type
+ * statement (e.g. `['iri','literal']`) therefore collapses to a single
+ * display type, with IRI taking precedence over literal.
  *
  * @param stmt - The statement to resolve.
  * @returns The SimpleDSP value type string.
  *
  * @example
  * resolveSimpleDspValueType({ shapeRefs: ['Agent'] })  // => 'structured'
- * resolveSimpleDspValueType({ valueType: 'iri' })      // => 'IRI'
+ * resolveSimpleDspValueType({ valueType: ['iri'] })    // => 'IRI'
  */
 export function resolveSimpleDspValueType(stmt: Statement): string {
 	if (stmt.shapeRefs && stmt.shapeRefs.length > 0) return 'structured';
 	if (stmt.classConstraint.length > 0) return 'structured';
-	if (stmt.valueType === 'iri') return 'IRI';
+	if (stmt.valueType.includes('iri')) return 'IRI';
 	if (
-		stmt.valueType === 'literal' ||
+		stmt.valueType.includes('literal') ||
 		(stmt.datatype && stmt.datatype.length > 0) ||
 		(Array.isArray(stmt.values) && stmt.values.length > 0)
 	) {
@@ -92,8 +96,8 @@ export function resolveSimpleDspValueType(stmt: Statement): string {
  *   2. `classConstraint` → space-separated class names
  *   3. `datatype` → datatype CURIE (e.g. `xsd:date`)
  *   4. `inScheme` → space-separated scheme URIs
- *   5. `values` with `valueType === 'iri'` → unquoted URIs
- *   6. `values` with `valueType === 'literal'` → quoted strings
+ *   5. `values` with `valueType` including `iri` → unquoted URIs
+ *   6. `values` otherwise (literal) → quoted strings
  *
  * @param stmt - The statement to resolve.
  * @returns The constraint string for the SimpleDSP output.
@@ -142,7 +146,7 @@ export function resolveSimpleDspConstraint(stmt: Statement, firstDescName?: stri
 
 	// Value set
 	if (Array.isArray(stmt.values) && stmt.values.length > 0) {
-		if (stmt.valueType === 'iri') {
+		if (stmt.valueType.includes('iri')) {
 			return stmt.values.join(' ');
 		}
 		// Literal picklist: quoted strings; embedded quotes escape as

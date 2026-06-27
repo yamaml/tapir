@@ -44,30 +44,35 @@ describe('parseBool', () => {
 // ── fromValueNodeType ───────────────────────────────────────────
 
 describe('fromValueNodeType', () => {
-	it('maps IRI/URI to "iri"', () => {
-		expect(fromValueNodeType('IRI')).toBe('iri');
-		expect(fromValueNodeType('URI')).toBe('iri');
-		expect(fromValueNodeType('iri')).toBe('iri');
+	it('maps IRI/URI to ["iri"]', () => {
+		expect(fromValueNodeType('IRI')).toEqual(['iri']);
+		expect(fromValueNodeType('URI')).toEqual(['iri']);
+		expect(fromValueNodeType('iri')).toEqual(['iri']);
 	});
 
-	it('maps literal to "literal"', () => {
-		expect(fromValueNodeType('literal')).toBe('literal');
-		expect(fromValueNodeType('LITERAL')).toBe('literal');
+	it('maps literal to ["literal"]', () => {
+		expect(fromValueNodeType('literal')).toEqual(['literal']);
+		expect(fromValueNodeType('LITERAL')).toEqual(['literal']);
 	});
 
-	it('maps bnode to "bnode"', () => {
-		expect(fromValueNodeType('bnode')).toBe('bnode');
-		expect(fromValueNodeType('BNODE')).toBe('bnode');
+	it('maps bnode to ["bnode"]', () => {
+		expect(fromValueNodeType('bnode')).toEqual(['bnode']);
+		expect(fromValueNodeType('BNODE')).toEqual(['bnode']);
 	});
 
-	it('returns empty string for unknown or empty', () => {
-		expect(fromValueNodeType('')).toBe('');
-		expect(fromValueNodeType(undefined)).toBe('');
-		expect(fromValueNodeType('unknown')).toBe('');
+	it('returns empty array for unknown or empty', () => {
+		expect(fromValueNodeType('')).toEqual([]);
+		expect(fromValueNodeType(undefined)).toEqual([]);
+		expect(fromValueNodeType('unknown')).toEqual([]);
 	});
 
-	it('handles multi-word nodeType (takes first word)', () => {
-		expect(fromValueNodeType('IRI or literal')).toBe('iri');
+	it('keeps every recognised token in a multi-token cell', () => {
+		expect(fromValueNodeType('IRI BNODE')).toEqual(['iri', 'bnode']);
+		expect(fromValueNodeType('IRI literal')).toEqual(['iri', 'literal']);
+		// Unrecognised tokens are dropped; recognised ones kept in order.
+		expect(fromValueNodeType('IRI or literal')).toEqual(['iri', 'literal']);
+		// Duplicates de-duplicated, mixed case normalised.
+		expect(fromValueNodeType('iri IRI bnode')).toEqual(['iri', 'bnode']);
 	});
 });
 
@@ -231,7 +236,7 @@ describe('dctapRowsToTapir', () => {
 		expect(stmt.label).toBe('Name');
 		expect(stmt.min).toBe(1);
 		expect(stmt.max).toBe(1);
-		expect(stmt.valueType).toBe('literal');
+		expect(stmt.valueType).toEqual(['literal']);
 		expect(stmt.datatype).toEqual(['xsd:string']);
 		expect(stmt.note).toBe('Full name');
 	});
@@ -447,7 +452,7 @@ describe('dctapRowsToTapir — case-insensitive column headers', () => {
 		expect(stmt.label).toBe('Name');
 		expect(stmt.min).toBe(1);
 		expect(stmt.max).toBe(1);
-		expect(stmt.valueType).toBe('literal');
+		expect(stmt.valueType).toEqual(['literal']);
 		expect(stmt.datatype).toEqual(['xsd:string']);
 		expect(stmt.values).toEqual(['a', 'b']);
 		expect(stmt.constraintType).toBe('picklist');
